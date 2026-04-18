@@ -1,0 +1,106 @@
+# ============================================================================
+# POS — Development stack
+# ----------------------------------------------------------------------------
+#   app    PHP-FPM + nginx + Vite dev server  (ports 8080, 5173)
+#   db     PostgreSQL 16                      (no host port)
+#   redis  Redis 7                            (no host port)
+#
+# Source is bind-mounted. Vendor, node_modules, bootstrap/cache,
+# storage/framework, storage/logs are anonymous volumes so host tools
+# never collide with container state.
+#
+# Run every composer/artisan command via  docker compose exec app ...
+# Never run them on the host.
+# ============================================================================
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: docker/dev/Dockerfile
+    container_name: pos-app
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-8080}:80"      # Laravel
+      - "${VITE_PORT:-5173}:5173"    # Vite HMR
+    environment:
+      APP_NAME: POS
+      APP_ENV: local
+      APP_DEBUG: "true"
+      APP_URL: ${APP_URL:-http://localhost:8080}
+      APP_KEY: ${APP_KEY:-}
+      APP_LOCALE: en
+      APP_FALLBACK_LOCALE: en
+      LOG_CHANNEL: stderr
+      LOG_LEVEL: debug
+      DB_CONNECTION: pgsql
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_DATABASE: pos
+      DB_USERNAME: pos
+      DB_PASSWORD: ${DB_PASSWORD:-pos_secret}
+      CACHE_STORE: redis
+      SESSION_DRIVER: redis
+      QUEUE_CONNECTION: redis
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      MAIL_MAILER: log
+      MAIL_FROM_ADDRESS: noreply@pos.local
+      MAIL_FROM_NAME: POS
+      VITE_HMR_HOST: localhost
+    volumes:
+      # Source code — live edits on host appear in container.
+      - .:/var/www/html
+      # Container-owned directories (anonymous volumes seeded from the image).
+      - /var/www/html/vendor
+      - /var/www/html/node_modules
+      - /var/www/html/bootstrap/cache
+      - /var/www/html/storage/framework
+      - /var/www/html/storage/logs
+      # Named volume for user-uploaded media, survives rebuilds.
+      - storage_public:/var/www/html/storage/app/public
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1/up"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+
+  db:
+    image: postgres:16-alpine
+    container_name: pos-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: pos
+      POSTGRES_USER: pos
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-pos_secret}
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pos -d pos"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: pos-redis
+    restart: unless-stopped
+    command: redis-server --maxmemory 128mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+volumes:
+  dbdata:
+  redisdata:
+  storage_public:

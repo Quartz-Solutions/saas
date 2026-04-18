@@ -1,0 +1,42 @@
+# Keep the build context small and predictable — the image installs/builds
+# everything itself from composer.lock and package-lock.json. Never bake the
+# host's vendor, node_modules, or compiled caches into the image.
+
+# Never ship secrets
+.env
+.env.local
+.env.*.local
+
+# Host-installed deps (image does its own installs)
+node_modules
+vendor
+
+# Laravel runtime state (belongs to container volumes)
+storage/logs/*
+storage/framework/cache/*
+storage/framework/sessions/*
+storage/framework/views/*
+bootstrap/cache/*
+
+# Front-end artefacts (prod image builds them fresh; dev uses Vite HMR)
+public/build
+public/hot
+
+# Development-only files
+.git
+.gitignore
+.github
+.planning
+.claude
+.idea
+.vscode
+.DS_Store
+tests
+phpunit.xml
+.prettierrc
+.prettierignore
+.editorconfig
+.eslintrc
+eslint.config.js
+*.md
+!README.md
