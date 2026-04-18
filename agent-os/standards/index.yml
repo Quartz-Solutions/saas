@@ -3,12 +3,20 @@
 backend:
   api:
     description: Needs description - run /index-standards
+  controller-conventions:
+    description: Thin controllers, FormRequest for writes, Inertia::render for GETs, by-feature folder layout (Settings/, Catalog/, Pos/, Storefront/)
+  migration-conventions:
+    description: Money as integer _cents columns; explicit FK cascade behavior; SoftDeletes on orders/customers/products
   migrations:
     description: Needs description - run /index-standards
+  model-conventions:
+    description: PHP 8 #[Fillable]/#[Hidden] attributes; explicit Fillable always; scopes & methods on the model (no repositories)
   models:
     description: Needs description - run /index-standards
   queries:
     description: Needs description - run /index-standards
+  validation-traits:
+    description: Reusable validation rule traits in app/Concerns; FormRequests + Fortify Actions compose them
 
 frontend:
   accessibility:
@@ -17,8 +25,18 @@ frontend:
     description: Needs description - run /index-standards
   css:
     description: Needs description - run /index-standards
+  data-tables:
+    description: DataTable<T> for server-paginated lists, LocalDataTable<T> for in-memory sets; async-select + range + daterange filters; cookie/API preferences via user_preferences table
+  inertia-layouts:
+    description: Layout dispatch by page-name prefix; PublicLayout default, admin/ → AppLayout, auth/ → AuthLayout
+  page-components:
+    description: Pages in resources/js/pages are thin Inertia entry points; <Form> + Wayfinder, uncontrolled inputs, Page.layout data
   responsive:
     description: Needs description - run /index-standards
+  shared-components:
+    description: Reusable widgets in components/ (live catalog at /shared-components); kebab-case files, default export, cn() helper, React 19 ref prop, data-test selectors; full shadcn-new-york UI set in components/ui/
+  wayfinder-routes:
+    description: Use auto-generated @/routes/* and @/actions/* helpers; never hand-write hrefs or edit generated files; run php artisan wayfinder:generate --with-form when adding routes outside pnpm dev
 
 global:
   coding-style:
@@ -31,6 +49,8 @@ global:
     description: Needs description - run /index-standards
   tech-stack:
     description: Needs description - run /index-standards
+  toast-flash:
+    description: Server pushes Inertia::flash('toast', ...); useFlashToast hook + sonner render it on every successful mutation
   validation:
     description: Needs description - run /index-standards
 

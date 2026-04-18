@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Settings\ProfileController;
 use App\Http\Controllers\Settings\SecurityController;
+use App\Http\Controllers\Settings\UserPreferenceController;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware(['auth'])->group(function () {
@@ -21,4 +22,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->name('user-password.update');
 
     Route::inertia('settings/appearance', 'settings/appearance')->name('appearance.edit');
+
+    Route::get('settings/preferences/{page}', [UserPreferenceController::class, 'show'])
+        ->name('preferences.show');
+    Route::put('settings/preferences/{page}', [UserPreferenceController::class, 'update'])
+        ->name('preferences.update');
 });
