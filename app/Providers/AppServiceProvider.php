@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Support\Auth\SocialProviderRegistry;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
@@ -15,7 +16,22 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        $this->app->singleton(SocialProviderRegistry::class, function () {
+            $registry = new SocialProviderRegistry;
+
+            // Register providers whose credentials are configured. Mirrors
+            // the HardwareRegistry pattern — only enabled drivers appear in
+            // the registry and therefore in the login UI.
+            if (config('services.google.client_id')) {
+                $registry->register('google', 'Google', 'google');
+            }
+
+            if (config('services.github.client_id')) {
+                $registry->register('github', 'GitHub', 'github');
+            }
+
+            return $registry;
+        });
     }
 
     /**

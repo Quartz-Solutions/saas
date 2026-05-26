@@ -7,22 +7,35 @@ import InputError from '@/components/input-error';
 import PasswordInput from '@/components/password-input';
 import TwoFactorRecoveryCodes from '@/components/two-factor-recovery-codes';
 import TwoFactorSetupModal from '@/components/two-factor-setup-modal';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { useTwoFactorAuth } from '@/hooks/use-two-factor-auth';
+import { formatDateTime } from '@/lib/utils';
 import { edit } from '@/routes/security';
 import { disable, enable } from '@/routes/two-factor';
+
+type LoginHistoryRow = {
+    id: number;
+    outcome: string;
+    method: string | null;
+    ip: string | null;
+    user_agent: string | null;
+    created_at: string | null;
+};
 
 type Props = {
     canManageTwoFactor?: boolean;
     requiresConfirmation?: boolean;
     twoFactorEnabled?: boolean;
+    loginHistory?: LoginHistoryRow[];
 };
 
 export default function Security({
     canManageTwoFactor = false,
     requiresConfirmation = false,
     twoFactorEnabled = false,
+    loginHistory = [],
 }: Props) {
     const passwordInput = useRef<HTMLInputElement>(null);
     const currentPasswordInput = useRef<HTMLInputElement>(null);
@@ -235,8 +248,66 @@ export default function Security({
                     />
                 </div>
             )}
+
+            <div className="space-y-6">
+                <Heading
+                    variant="small"
+                    title="Recent sign-in activity"
+                    description="The last 10 attempts on your account. Anything you don't recognise is a signal to rotate your password."
+                />
+
+                {loginHistory.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">
+                        No sign-in history yet.
+                    </p>
+                ) : (
+                    <ul
+                        className="divide-y divide-border rounded-md border"
+                        data-test="login-history-list"
+                    >
+                        {loginHistory.map((row) => (
+                            <li
+                                key={row.id}
+                                className="flex items-start gap-4 p-3 text-sm"
+                            >
+                                <div className="w-28 shrink-0">
+                                    <OutcomeBadge outcome={row.outcome} />
+                                </div>
+                                <div className="flex-1 space-y-0.5">
+                                    <div className="font-mono text-xs text-muted-foreground">
+                                        {row.created_at
+                                            ? formatDateTime(row.created_at)
+                                            : '—'}{' '}
+                                        · {row.ip ?? 'unknown IP'}
+                                    </div>
+                                    <div className="text-xs text-muted-foreground">
+                                        {row.method ?? 'password'}
+                                        {row.user_agent && (
+                                            <span className="ml-2 line-clamp-1">
+                                                {row.user_agent}
+                                            </span>
+                                        )}
+                                    </div>
+                                </div>
+                            </li>
+                        ))}
+                    </ul>
+                )}
+            </div>
         </>
     );
+}
+
+function OutcomeBadge({ outcome }: { outcome: string }) {
+    if (outcome === 'succeeded') {
+return <Badge>Succeeded</Badge>;
+}
+
+    if (outcome === 'failed') {
+return <Badge variant="destructive">Failed</Badge>;
+}
+
+    return <Badge variant="outline">{outcome}</Badge>;
 }
 
 Security.layout = {
