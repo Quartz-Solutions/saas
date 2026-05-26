@@ -3,9 +3,12 @@
 namespace App\Http\Middleware;
 
 use App\Http\Controllers\Marketing\CookieConsentController;
+use App\Models\User;
+use App\Support\Admin\ImpersonationService;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 use Laravel\Fortify\Features;
+use Spatie\Permission\PermissionRegistrar;
 
 class HandleInertiaRequests extends Middleware
 {
@@ -37,15 +40,54 @@ class HandleInertiaRequests extends Middleware
      */
     public function share(Request $request): array
     {
+        $impersonator = $this->resolveImpersonator();
+        $user = $request->user();
+
         return [
             ...parent::share($request),
             'name' => config('app.name'),
             'auth' => [
-                'user' => $request->user(),
+                'user' => $user,
+                'isSuperAdmin' => $user !== null && $this->isSuperAdmin($user),
+            ],
+            'impersonation' => $impersonator === null ? null : [
+                'impersonator' => [
+                    'id' => $impersonator->id,
+                    'name' => $impersonator->name,
+                    'email' => $impersonator->email,
+                ],
             ],
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
             'cookieConsent' => $request->cookie(CookieConsentController::COOKIE_NAME),
             'canRegister' => Features::enabled(Features::registration()),
         ];
+    }
+
+    private function resolveImpersonator(): ?User
+    {
+        $service = app(ImpersonationService::class);
+
+        if (! $service->isImpersonating()) {
+            return null;
+        }
+
+        $id = $service->impersonatorId();
+
+        return $id === null ? null : User::find($id);
+    }
+
+    private function isSuperAdmin(User $user): bool
+    {
+        // Spatie's hasRole respects whatever team is currently set on the
+        // request. Look up the Super Admin role explicitly against null
+        // (global) team so we don't false-negative inside a tenant scope.
+        $previousTeam = app(PermissionRegistrar::class)->getPermissionsTeamId();
+        try {
+            setPermissionsTeamId(null);
+
+            return $user->hasRole('Super Admin');
+        } finally {
+            setPermissionsTeamId($previousTeam);
+        }
     }
 }
