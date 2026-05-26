@@ -314,19 +314,19 @@ function CancelDialog({
     );
 }
 
-BillingPlans.layout = {
-    breadcrumbs: ({
-        currentTenant,
-    }: {
-        currentTenant: { slug: string; name: string } | null;
-    }) => {
-        const slug = currentTenant?.slug ?? '';
-        return [
+BillingPlans.layout = ({
+    currentTenant,
+}: {
+    currentTenant: { slug: string; name: string } | null;
+}) => {
+    const slug = currentTenant?.slug ?? '';
+    return {
+        breadcrumbs: [
             {
                 title: currentTenant?.name ?? 'Tenant',
                 href: tenantRoutes.dashboard({ tenantSlug: slug }),
             },
             { title: 'Billing', href: tenantRoutes.billing.plans({ tenantSlug: slug }) },
-        ];
-    },
+        ],
+    };
 };

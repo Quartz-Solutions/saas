@@ -40,7 +40,7 @@ class NewDeviceLoginAlert extends Notification
         if (View::exists('mail.login-alert')) {
             return (new MailMessage)
                 ->subject(__('New sign-in to your account'))
-                ->view('mail.login-alert', [
+                ->markdown('mail.login-alert', [
                     'user' => $notifiable,
                     'ip' => $this->ip,
                     'userAgent' => $this->userAgent,

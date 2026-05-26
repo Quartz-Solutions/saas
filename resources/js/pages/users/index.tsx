@@ -533,19 +533,19 @@ function DeleteUserDialog({
     );
 }
 
-UsersIndex.layout = {
-    breadcrumbs: ({
-        currentTenant,
-    }: {
-        currentTenant: { slug: string; name: string } | null;
-    }) => {
-        const slug = currentTenant?.slug ?? '';
-        return [
+UsersIndex.layout = ({
+    currentTenant,
+}: {
+    currentTenant: { slug: string; name: string } | null;
+}) => {
+    const slug = currentTenant?.slug ?? '';
+    return {
+        breadcrumbs: [
             {
                 title: currentTenant?.name ?? 'Tenant',
                 href: tenantRoutes.dashboard({ tenantSlug: slug }),
             },
             { title: 'Users', href: tenantRoutes.users.index({ tenantSlug: slug }) },
-        ];
-    },
+        ],
+    };
 };

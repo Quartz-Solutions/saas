@@ -342,15 +342,15 @@ function RevokeInvitationDialog({
     );
 }
 
-TenantInvitations.layout = {
-    breadcrumbs: ({
-        currentTenant,
-    }: {
-        currentTenant: { slug: string; name: string } | null;
-    }) => {
-        const slug = currentTenant?.slug ?? '';
+TenantInvitations.layout = ({
+    currentTenant,
+}: {
+    currentTenant: { slug: string; name: string } | null;
+}) => {
+    const slug = currentTenant?.slug ?? '';
 
-        return [
+    return {
+        breadcrumbs: [
             {
                 title: currentTenant?.name ?? 'Tenant',
                 href: tenantRoutes.dashboard({ tenantSlug: slug }),
@@ -359,6 +359,6 @@ TenantInvitations.layout = {
                 title: 'Invitations',
                 href: tenantRoutes.invitations.index({ tenantSlug: slug }),
             },
-        ];
-    },
+        ],
+    };
 };

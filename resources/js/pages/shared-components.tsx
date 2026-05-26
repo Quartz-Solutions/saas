@@ -1901,26 +1901,23 @@ const [range, setRange] = useState<DateRange | undefined>();
     );
 }
 
-SharedComponents.layout = {
-    breadcrumbs: ({
-        currentTenant,
-    }: {
-        currentTenant: { slug: string; name: string } | null;
-    }) => {
-        if (currentTenant) {
-            return [
-                {
-                    title: currentTenant.name,
-                    href: tenantRoutes.dashboard({ tenantSlug: currentTenant.slug }),
-                },
-                {
-                    title: 'Shared Components',
-                    href: tenantRoutes.sharedComponents({
-                        tenantSlug: currentTenant.slug,
-                    }),
-                },
-            ];
-        }
-        return [{ title: 'Dashboard', href: dashboard() }];
-    },
-};
+SharedComponents.layout = ({
+    currentTenant,
+}: {
+    currentTenant: { slug: string; name: string } | null;
+}) => ({
+    breadcrumbs: currentTenant
+        ? [
+              {
+                  title: currentTenant.name,
+                  href: tenantRoutes.dashboard({ tenantSlug: currentTenant.slug }),
+              },
+              {
+                  title: 'Shared Components',
+                  href: tenantRoutes.sharedComponents({
+                      tenantSlug: currentTenant.slug,
+                  }),
+              },
+          ]
+        : [{ title: 'Dashboard', href: dashboard() }],
+});

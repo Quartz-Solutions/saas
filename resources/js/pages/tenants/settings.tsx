@@ -307,20 +307,20 @@ function DeleteTenantDialog({
     );
 }
 
-TenantSettings.layout = {
-    breadcrumbs: ({
-        currentTenant,
-    }: {
-        currentTenant: { slug: string; name: string } | null;
-    }) => {
-        const slug = currentTenant?.slug ?? '';
+TenantSettings.layout = ({
+    currentTenant,
+}: {
+    currentTenant: { slug: string; name: string } | null;
+}) => {
+    const slug = currentTenant?.slug ?? '';
 
-        return [
+    return {
+        breadcrumbs: [
             {
                 title: currentTenant?.name ?? 'Tenant',
                 href: tenantRoutes.dashboard({ tenantSlug: slug }),
             },
             { title: 'Settings', href: tenantRoutes.settings({ tenantSlug: slug }) },
-        ];
-    },
+        ],
+    };
 };

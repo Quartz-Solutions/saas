@@ -243,20 +243,20 @@ export default function BillingInvoices({ invoices, tableState }: Props) {
     );
 }
 
-BillingInvoices.layout = {
-    breadcrumbs: ({
-        currentTenant,
-    }: {
-        currentTenant: { slug: string; name: string } | null;
-    }) => {
-        const slug = currentTenant?.slug ?? '';
-        return [
+BillingInvoices.layout = ({
+    currentTenant,
+}: {
+    currentTenant: { slug: string; name: string } | null;
+}) => {
+    const slug = currentTenant?.slug ?? '';
+    return {
+        breadcrumbs: [
             {
                 title: currentTenant?.name ?? 'Tenant',
                 href: tenantRoutes.dashboard({ tenantSlug: slug }),
             },
             { title: 'Billing', href: tenantRoutes.billing.plans({ tenantSlug: slug }) },
             { title: 'Invoices', href: tenantRoutes.billing.invoices.index({ tenantSlug: slug }) },
-        ];
-    },
+        ],
+    };
 };

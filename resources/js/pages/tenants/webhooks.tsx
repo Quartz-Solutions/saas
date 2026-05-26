@@ -646,17 +646,17 @@ function TestFireItem({ row, tenantSlug }: { row: WebhookEndpoint; tenantSlug: s
     );
 }
 
-WebhooksIndex.layout = {
-    breadcrumbs: ({
-        currentTenant,
-    }: {
-        currentTenant: { slug: string; name: string } | null;
-    }) => {
-        const slug = currentTenant?.slug ?? '';
+WebhooksIndex.layout = ({
+    currentTenant,
+}: {
+    currentTenant: { slug: string; name: string } | null;
+}) => {
+    const slug = currentTenant?.slug ?? '';
 
-        return [
+    return {
+        breadcrumbs: [
             { title: currentTenant?.name ?? 'Tenant', href: tenantRoutes.dashboard({ tenantSlug: slug }) },
             { title: 'Webhooks', href: tenantRoutes.webhooks.index({ tenantSlug: slug }) },
-        ];
-    },
+        ],
+    };
 };
