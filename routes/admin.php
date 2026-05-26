@@ -4,6 +4,7 @@ use App\Http\Controllers\Admin\AuditLogsController;
 use App\Http\Controllers\Admin\DashboardController;
 use App\Http\Controllers\Admin\FeatureFlagOverridesController;
 use App\Http\Controllers\Admin\FeatureFlagsController;
+use App\Http\Controllers\Admin\GatewaysController;
 use App\Http\Controllers\Admin\PlansController;
 use App\Http\Controllers\Admin\SettingsController;
 use App\Http\Controllers\Admin\SubscriptionActionsController;
@@ -65,6 +66,11 @@ Route::middleware(['auth', 'verified', 'admin.scope', 'role:Super Admin'])
         Route::get('settings', [SettingsController::class, 'index'])->name('settings.index');
         Route::patch('settings/{group}', [SettingsController::class, 'update'])->name('settings.update');
         Route::post('settings/{group}/test', [SettingsController::class, 'test'])->name('settings.test');
+
+        // Payment gateways — credentials + enable per gateway.
+        Route::get('gateways', [GatewaysController::class, 'index'])->name('gateways.index');
+        Route::get('gateways/{gateway}', [GatewaysController::class, 'edit'])->name('gateways.edit');
+        Route::patch('gateways/{gateway}', [GatewaysController::class, 'update'])->name('gateways.update');
 
         // Plans — DB-owned plan catalog (Phase A).
         Route::resource('plans', PlansController::class)

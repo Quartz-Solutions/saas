@@ -180,53 +180,10 @@ return [
             ],
         ],
 
-        'stripe' => [
-            'label' => 'Stripe',
-            'description' => 'Payment gateway credentials. Webhook secret is verified against the X-Stripe-Signature header on every event.',
-            'icon' => 'CreditCard',
-            'fields' => [
-                'STRIPE_KEY' => [
-                    'config_path' => 'billing.gateways.stripe.public_key',
-                    'type' => 'string',
-                    'rules' => 'nullable|string|max:255',
-                    'label' => 'Publishable key',
-                    'help' => 'Safe to expose to the browser. Starts with pk_test_ or pk_live_.',
-                ],
-                'STRIPE_SECRET' => [
-                    'config_path' => 'billing.gateways.stripe.secret',
-                    'type' => 'secret',
-                    'rules' => 'nullable|string|max:255',
-                    'label' => 'Secret key',
-                    'help' => 'Server-side only. Starts with sk_test_ or sk_live_.',
-                ],
-                'STRIPE_WEBHOOK_SECRET' => [
-                    'config_path' => 'billing.gateways.stripe.webhook_secret',
-                    'type' => 'secret',
-                    'rules' => 'nullable|string|max:255',
-                    'label' => 'Webhook signing secret',
-                    'help' => 'Starts with whsec_. From the Stripe Dashboard → Developers → Webhooks page.',
-                ],
-                'STRIPE_API_VERSION' => [
-                    'config_path' => 'billing.gateways.stripe.api_version',
-                    'type' => 'string',
-                    'default' => '2024-11-20.acacia',
-                    'rules' => 'nullable|string|max:64',
-                    'label' => 'API version',
-                ],
-                'STRIPE_PRICE_PRO' => [
-                    'config_path' => 'billing.plans.pro.gateway_prices.stripe',
-                    'type' => 'string',
-                    'rules' => 'nullable|string|max:64',
-                    'label' => 'Pro plan price ID',
-                ],
-                'STRIPE_PRICE_ENTERPRISE' => [
-                    'config_path' => 'billing.plans.enterprise.gateway_prices.stripe',
-                    'type' => 'string',
-                    'rules' => 'nullable|string|max:64',
-                    'label' => 'Enterprise plan price ID',
-                ],
-            ],
-        ],
+        // Stripe + the other payment gateways moved to /admin/gateways
+        // (see config('billing.gateways.*.fields')). Settings here is for
+        // app-level integrations only — payment gateways live in their
+        // own admin surface.
 
         'sentry' => [
             'label' => 'Sentry',

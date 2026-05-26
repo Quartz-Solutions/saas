@@ -25,13 +25,52 @@ class AppSettingsService
     public const SECRET_MASK = '••••••••';
 
     /**
-     * Catalog -> indexed by group, then by key. Convenience.
+     * Catalog -> indexed by group, then by key. Aggregates:
+     *
+     *   - app-level integrations (mail / OAuth / Sentry / Slack / AWS / app
+     *     branding) from config('app-settings.groups')
+     *   - payment gateways from config('billing.gateways.*') — each gateway
+     *     becomes a group keyed `gateway_{id}`
+     *
+     * The boot-time Config::set hydration walks this merged catalog, so
+     * gateway field overrides flow into `billing.gateways.{id}.*` exactly
+     * like app-settings overrides flow into their own paths.
      *
      * @return array<string, array<string, mixed>>
      */
     public function catalog(): array
     {
-        return config('app-settings.groups', []);
+        return array_merge(
+            (array) config('app-settings.groups', []),
+            $this->gatewayCatalog(),
+        );
+    }
+
+    /**
+     * Gateway catalog reshaped to match the app-settings group shape so the
+     * rest of this service can treat them uniformly. Gateways without any
+     * field declarations yet (driver_status=planned, awaiting per-gateway
+     * agent work) are skipped — they have nothing to render or persist.
+     *
+     * @return array<string, array<string, mixed>>
+     */
+    protected function gatewayCatalog(): array
+    {
+        $out = [];
+        foreach ((array) config('billing.gateways', []) as $id => $meta) {
+            $fields = $meta['fields'] ?? null;
+            if (! is_array($fields) || $fields === []) {
+                continue;
+            }
+            $out['gateway_'.$id] = [
+                'label' => $meta['name'] ?? $id,
+                'description' => $meta['description'] ?? null,
+                'icon' => 'CreditCard',
+                'fields' => $fields,
+            ];
+        }
+
+        return $out;
     }
 
     /**

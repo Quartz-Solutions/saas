@@ -12,8 +12,20 @@ use App\Models\User;
 use App\Observers\AuditObserver;
 use App\Support\Auth\PwnedPasswords;
 use App\Support\Auth\SocialProviderRegistry;
+use App\Support\Billing\Aps\ApsGateway;
+use App\Support\Billing\Billplz\BillplzGateway;
+use App\Support\Billing\Fawry\FawryGateway;
 use App\Support\Billing\GatewayRegistry;
+use App\Support\Billing\Geidea\GeideaGateway;
+use App\Support\Billing\HitPay\HitPayGateway;
+use App\Support\Billing\HyperPay\HyperPayGateway;
+use App\Support\Billing\Ipay88\Ipay88Gateway;
+use App\Support\Billing\MyFatoorah\MyFatoorahGateway;
+use App\Support\Billing\Paymob\PaymobGateway;
+use App\Support\Billing\PayPal\PayPalGateway;
+use App\Support\Billing\PayTabs\PayTabsGateway;
 use App\Support\Billing\Stripe\StripeGateway;
+use App\Support\Billing\Telr\TelrGateway;
 use App\Support\Tenancy\PathTenantResolver;
 use App\Support\Tenancy\TenantResolver;
 use Carbon\CarbonImmutable;
@@ -66,12 +78,37 @@ class AppServiceProvider extends ServiceProvider
         $this->app->singleton(GatewayRegistry::class, function ($app) {
             $registry = new GatewayRegistry;
 
+            // Stripe — shipped + production-tested.
             if (config('billing.gateways.stripe.enabled')) {
                 $registry->register(new StripeGateway(
                     client: $app->make(StripeClient::class),
                     webhookSecret: (string) config('billing.gateways.stripe.webhook_secret', ''),
                     webhookTolerance: (int) config('billing.gateways.stripe.webhook_tolerance_seconds', 300),
                 ));
+            }
+
+            // Planned drivers (Phase 3.1-3.4) — scaffolds with real signature/auth
+            // logic but stub transaction methods. Registered when explicitly enabled
+            // so admin can iterate webhook verification without going live.
+            $plannedDrivers = [
+                'paypal' => PayPalGateway::class,
+                'paymob' => PaymobGateway::class,
+                'fawry' => FawryGateway::class,
+                'paytabs' => PayTabsGateway::class,
+                'geidea' => GeideaGateway::class,
+                'aps' => ApsGateway::class,
+                'telr' => TelrGateway::class,
+                'hyperpay' => HyperPayGateway::class,
+                'myfatoorah' => MyFatoorahGateway::class,
+                'hitpay' => HitPayGateway::class,
+                'billplz' => BillplzGateway::class,
+                'ipay88' => Ipay88Gateway::class,
+            ];
+
+            foreach ($plannedDrivers as $id => $class) {
+                if (config("billing.gateways.{$id}.enabled") && class_exists($class)) {
+                    $registry->register($app->make($class));
+                }
             }
 
             return $registry;

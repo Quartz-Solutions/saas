@@ -47,7 +47,7 @@ class SettingsControllerTest extends TestCase
                 ->has('groups.app')
                 ->has('groups.mail')
                 ->has('groups.oauth')
-                ->has('groups.stripe')
+                // Stripe + the other payment gateways live in /admin/gateways.
                 ->has('groups.sentry')
                 ->has('groups.slack')
                 ->has('groups.aws')
@@ -88,26 +88,28 @@ class SettingsControllerTest extends TestCase
     {
         $admin = $this->makeSuperAdmin();
 
+        // Mail password is a secret field still owned by the Settings page.
         AppSetting::create([
-            'group' => 'stripe',
-            'key' => 'STRIPE_SECRET',
+            'group' => 'mail',
+            'key' => 'MAIL_PASSWORD',
             'is_secret' => true,
-            'value' => 'sk_test_KEEP_ME',
+            'value' => 'super-secret-existing',
         ]);
 
         $this->actingAs($admin)
-            ->patch('/admin/settings/stripe', [
-                'STRIPE_KEY' => 'pk_test_new',
-                'STRIPE_SECRET' => AppSettingsService::SECRET_MASK,
-                'STRIPE_WEBHOOK_SECRET' => '',
-                'STRIPE_API_VERSION' => '2024-11-20.acacia',
-                'STRIPE_PRICE_PRO' => '',
-                'STRIPE_PRICE_ENTERPRISE' => '',
+            ->patch('/admin/settings/mail', [
+                'MAIL_MAILER' => 'smtp',
+                'MAIL_HOST' => 'smtp.example.com',
+                'MAIL_PORT' => 587,
+                'MAIL_USERNAME' => 'user@example.com',
+                'MAIL_PASSWORD' => AppSettingsService::SECRET_MASK,
+                'MAIL_FROM_ADDRESS' => 'noreply@example.com',
+                'MAIL_FROM_NAME' => 'Example',
             ])
             ->assertRedirect();
 
-        $secret = AppSetting::query()->where('key', 'STRIPE_SECRET')->firstOrFail();
-        $this->assertSame('sk_test_KEEP_ME', $secret->value);
+        $secret = AppSetting::query()->where('key', 'MAIL_PASSWORD')->firstOrFail();
+        $this->assertSame('super-secret-existing', $secret->value);
     }
 
     public function test_empty_string_clears_override(): void
@@ -230,8 +232,9 @@ class SettingsControllerTest extends TestCase
     {
         $admin = $this->makeSuperAdmin();
 
+        // Sentry test needs a DSN — empty DSN → ok=false.
         $this->actingAs($admin)
-            ->postJson('/admin/settings/stripe/test')
+            ->postJson('/admin/settings/sentry/test')
             ->assertOk()
             ->assertJson(['ok' => false]);
     }

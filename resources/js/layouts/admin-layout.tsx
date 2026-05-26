@@ -8,6 +8,7 @@ import {
     LayoutGrid,
     LogOut,
     Receipt,
+    Wallet,
     Webhook,
 } from 'lucide-react';
 import type { PropsWithChildren } from 'react';
@@ -20,6 +21,7 @@ import type { NavItem } from '@/types';
 import { dashboard as adminDashboard, stopImpersonating } from '@/routes/admin';
 import { index as auditIndex } from '@/routes/admin/audit';
 import { index as featureFlagsIndex } from '@/routes/admin/feature-flags';
+import { index as gatewaysIndex } from '@/routes/admin/gateways';
 import { index as plansIndex } from '@/routes/admin/plans';
 import { index as settingsIndex } from '@/routes/admin/settings';
 import { index as subscriptionsIndex } from '@/routes/admin/subscriptions';
@@ -46,6 +48,11 @@ const sidebarNavItems: NavItem[] = [
         title: 'Subscriptions',
         href: subscriptionsIndex(),
         icon: Receipt,
+    },
+    {
+        title: 'Payment gateways',
+        href: gatewaysIndex(),
+        icon: Wallet,
     },
     {
         title: 'Webhooks',
