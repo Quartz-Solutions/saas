@@ -4,6 +4,7 @@ use App\Http\Controllers\API\UserSearchController;
 use App\Http\Controllers\Auth\MagicLinkController;
 use App\Http\Controllers\Auth\SocialController;
 use App\Http\Controllers\Tenants\TenantInvitationsController;
+use App\Http\Controllers\Tenants\TenantOnboardingController;
 use App\Http\Controllers\Tenants\TenantsController;
 use App\Http\Controllers\Tenants\TenantSwitchController;
 use App\Http\Controllers\Users\UsersController;
@@ -98,6 +99,9 @@ Route::middleware(['auth', 'verified', 'tenant', 'tenant.member'])
 
         Route::delete('invitations/{invitation}', [TenantInvitationsController::class, 'destroy'])
             ->name('invitations.destroy');
+
+        Route::post('onboarding/complete', [TenantOnboardingController::class, 'complete'])
+            ->name('onboarding.complete');
     });
 
 // Convenience: /dashboard redirects to the user's current tenant dashboard
