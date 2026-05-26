@@ -73,7 +73,26 @@ services:
       timeout: 3s
       retries: 3
 
+  mailpit:
+    image: axllent/mailpit:latest
+    restart: unless-stopped
+    ports:
+      - "${MAILPIT_UI_PORT:-8025}:8025"     # web UI
+      - "${MAILPIT_SMTP_PORT:-1025}:1025"   # SMTP listener
+    environment:
+      MP_MAX_MESSAGES: 5000
+      MP_SMTP_AUTH_ACCEPT_ANY: 1
+      MP_SMTP_AUTH_ALLOW_INSECURE: 1
+    volumes:
+      - mailpitdata:/data
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8025/api/v1/info"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
 volumes:
   dbdata:
   redisdata:
+  mailpitdata:
   storage_public:
