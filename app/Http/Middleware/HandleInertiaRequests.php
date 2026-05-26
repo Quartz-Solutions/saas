@@ -46,6 +46,10 @@ class HandleInertiaRequests extends Middleware
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
             'cookieConsent' => $request->cookie(CookieConsentController::COOKIE_NAME),
             'canRegister' => Features::enabled(Features::registration()),
+            // Surface one-shot flashed values so the front-end can pick them up
+            // exactly once (e.g. plain-text API tokens & webhook secrets).
+            'plain_text_token' => fn () => $request->session()->get('plain_text_token'),
+            'webhook_secret' => fn () => $request->session()->get('webhook_secret'),
         ];
     }
 }

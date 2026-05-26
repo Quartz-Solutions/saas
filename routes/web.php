@@ -7,6 +7,7 @@ use App\Http\Controllers\Tenants\TenantInvitationsController;
 use App\Http\Controllers\Tenants\TenantsController;
 use App\Http\Controllers\Tenants\TenantSwitchController;
 use App\Http\Controllers\Users\UsersController;
+use App\Http\Controllers\Webhooks\WebhooksController;
 use Illuminate\Support\Facades\Route;
 
 require __DIR__.'/marketing.php';
@@ -98,6 +99,23 @@ Route::middleware(['auth', 'verified', 'tenant', 'tenant.member'])
 
         Route::delete('invitations/{invitation}', [TenantInvitationsController::class, 'destroy'])
             ->name('invitations.destroy');
+
+        Route::get('settings/webhooks', [WebhooksController::class, 'index'])
+            ->name('webhooks.index');
+        Route::post('settings/webhooks', [WebhooksController::class, 'store'])
+            ->name('webhooks.store');
+        Route::patch('settings/webhooks/{webhook}', [WebhooksController::class, 'update'])
+            ->whereNumber('webhook')
+            ->name('webhooks.update');
+        Route::delete('settings/webhooks/{webhook}', [WebhooksController::class, 'destroy'])
+            ->whereNumber('webhook')
+            ->name('webhooks.destroy');
+        Route::post('settings/webhooks/{webhook}/rotate-secret', [WebhooksController::class, 'rotateSecret'])
+            ->whereNumber('webhook')
+            ->name('webhooks.rotate-secret');
+        Route::post('settings/webhooks/{webhook}/test-fire', [WebhooksController::class, 'testFire'])
+            ->whereNumber('webhook')
+            ->name('webhooks.test-fire');
     });
 
 // Convenience: /dashboard redirects to the user's current tenant dashboard

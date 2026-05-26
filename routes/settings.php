@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\ApiTokens\ApiTokensController;
 use App\Http\Controllers\Settings\ProfileController;
 use App\Http\Controllers\Settings\SecurityController;
 use App\Http\Controllers\Settings\SessionsController;
@@ -35,4 +36,12 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->name('sessions.destroyAll');
     Route::delete('settings/sessions/{session}', [SessionsController::class, 'destroy'])
         ->name('sessions.destroy');
+
+    Route::get('settings/api-tokens', [ApiTokensController::class, 'index'])
+        ->name('api-tokens.index');
+    Route::post('settings/api-tokens', [ApiTokensController::class, 'store'])
+        ->name('api-tokens.store');
+    Route::delete('settings/api-tokens/{token}', [ApiTokensController::class, 'destroy'])
+        ->whereNumber('token')
+        ->name('api-tokens.destroy');
 });

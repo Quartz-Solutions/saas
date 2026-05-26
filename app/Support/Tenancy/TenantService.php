@@ -2,12 +2,15 @@
 
 namespace App\Support\Tenancy;
 
+use App\Events\TenantMemberInvited;
+use App\Events\TenantMemberJoined;
 use App\Models\Tenant;
 use App\Models\TenantInvitation;
 use App\Models\TenantMembership;
 use App\Models\TenantOwnerTransfer;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
 use RuntimeException;
@@ -134,7 +137,7 @@ class TenantService
             throw new InvalidArgumentException("Unknown role: {$role}");
         }
 
-        return DB::transaction(function () use ($tenant, $inviter, $email, $role, $autoAttach) {
+        $invitation = DB::transaction(function () use ($tenant, $inviter, $email, $role, $autoAttach) {
             $existing = TenantInvitation::query()
                 ->where('tenant_id', $tenant->id)
                 ->where('email', $email)
@@ -170,6 +173,12 @@ class TenantService
 
             return $invitation->fresh();
         });
+
+        if ($invitation !== null) {
+            Event::dispatch(new TenantMemberInvited($tenant, $invitation));
+        }
+
+        return $invitation;
     }
 
     /**
@@ -192,8 +201,9 @@ class TenantService
             throw new RuntimeException('Invitation belongs to a different email address.');
         }
 
-        return DB::transaction(function () use ($invitation, $user) {
+        [$tenant, $membership, $wasNew] = DB::transaction(function () use ($invitation, $user) {
             $tenant = $invitation->tenant;
+            $wasNew = false;
 
             if ($this->isMember($tenant, $user)) {
                 $membership = TenantMembership::query()
@@ -207,6 +217,7 @@ class TenantService
                     $invitation->role ?: 'Member',
                     $invitation->inviter ?: null,
                 );
+                $wasNew = true;
             }
 
             $invitation->forceFill([
@@ -214,8 +225,14 @@ class TenantService
                 'accepted_by_id' => $user->id,
             ])->save();
 
-            return $membership;
+            return [$tenant, $membership, $wasNew];
         });
+
+        if ($wasNew && $tenant !== null) {
+            Event::dispatch(new TenantMemberJoined($tenant, $membership));
+        }
+
+        return $membership;
     }
 
     /**

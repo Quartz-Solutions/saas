@@ -6,8 +6,11 @@ use App\Support\Auth\SocialProviderRegistry;
 use App\Support\Tenancy\PathTenantResolver;
 use App\Support\Tenancy\TenantResolver;
 use Carbon\CarbonImmutable;
+use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Validation\Rules\Password;
 
@@ -41,6 +44,21 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $this->configureDefaults();
+        $this->configureRateLimiting();
+    }
+
+    /**
+     * Register the per-token API rate limiter.
+     */
+    protected function configureRateLimiting(): void
+    {
+        RateLimiter::for('api', function (Request $request) {
+            $perMinute = (int) config('api-abilities.rate_limit_per_minute', 60);
+            $tokenId = $request->user()?->currentAccessToken()?->id;
+
+            return Limit::perMinute($perMinute)
+                ->by($tokenId !== null ? 'token:'.$tokenId : 'ip:'.$request->ip());
+        });
     }
 
     /**
