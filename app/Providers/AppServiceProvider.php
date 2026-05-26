@@ -61,11 +61,6 @@ class AppServiceProvider extends ServiceProvider
         $this->configureLoginAlertListener();
     }
 
-    /**
-     * Attach the AuditObserver to models whose writes we want diffed
-     * into `audit_logs`. Subscription is gated on its class existing
-     * because Phase 3 may not have merged yet.
-     */
     protected function configureAuditObservers(): void
     {
         Tenant::observe(AuditObserver::class);
@@ -77,14 +72,6 @@ class AppServiceProvider extends ServiceProvider
         }
     }
 
-    /**
-     * Named rate limiters for auth endpoints. Apply to routes via
-     * `->middleware('throttle:login')` etc. Fortify-managed routes are
-     * covered by the `login` + `two-factor` limiters in
-     * FortifyServiceProvider; the others (`register`, `forgot-password`)
-     * are picked up by Fortify's own throttling config and by any custom
-     * routes that opt in.
-     */
     protected function configureRateLimiters(): void
     {
         RateLimiter::for('register', function (Request $request) {
@@ -105,15 +92,16 @@ class AppServiceProvider extends ServiceProvider
 
             return Limit::perMinute(5)->by((string) $key);
         });
+
+        RateLimiter::for('api', function (Request $request) {
+            $perMinute = (int) config('api-abilities.rate_limit_per_minute', 60);
+            $tokenId = $request->user()?->currentAccessToken()?->id;
+
+            return Limit::perMinute($perMinute)
+                ->by($tokenId !== null ? 'token:'.$tokenId : 'ip:'.$request->ip());
+        });
     }
 
-    /**
-     * Auth\Events\Login fires on every successful authentication. We
-     * inspect the previous LoginHistory row for the user and, if the
-     * IP/UA has changed, dispatch a NewDeviceLoginAlert notification.
-     *
-     * Listener implementation lives in App\Listeners\AlertOnNewDeviceLogin.
-     */
     protected function configureLoginAlertListener(): void
     {
         Event::listen(Login::class, AlertOnNewDeviceLogin::class);

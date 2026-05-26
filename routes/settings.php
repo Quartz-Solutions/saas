@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\ApiTokens\ApiTokensController;
 use App\Http\Controllers\Notifications\NotificationsController;
 use App\Http\Controllers\Settings\DataExportController;
 use App\Http\Controllers\Settings\NotificationsPreferencesController;
@@ -56,4 +57,12 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->name('notifications.read');
     Route::patch('notifications/read-all', [NotificationsController::class, 'markAllRead'])
         ->name('notifications.read-all');
+
+    Route::get('settings/api-tokens', [ApiTokensController::class, 'index'])
+        ->name('api-tokens.index');
+    Route::post('settings/api-tokens', [ApiTokensController::class, 'store'])
+        ->name('api-tokens.store');
+    Route::delete('settings/api-tokens/{token}', [ApiTokensController::class, 'destroy'])
+        ->whereNumber('token')
+        ->name('api-tokens.destroy');
 });
