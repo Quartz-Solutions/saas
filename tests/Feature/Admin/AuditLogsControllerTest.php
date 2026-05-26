@@ -20,6 +20,8 @@ class AuditLogsControllerTest extends TestCase
         $admin = User::factory()->create();
         $admin->assignRole('Super Admin');
 
+        AuditLog::query()->delete();
+
         return $admin;
     }
 
