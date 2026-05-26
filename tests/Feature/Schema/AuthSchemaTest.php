@@ -6,6 +6,7 @@ use App\Models\LoginHistory;
 use App\Models\MagicLoginToken;
 use App\Models\SocialAccount;
 use App\Models\User;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -33,7 +34,7 @@ class AuthSchemaTest extends TestCase
             'provider_user_id' => 'duplicate-id',
         ]);
 
-        $this->expectException(\Illuminate\Database\QueryException::class);
+        $this->expectException(QueryException::class);
 
         SocialAccount::factory()->create([
             'provider' => 'google',

@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Settings;
 
+use App\Models\LoginHistory;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
@@ -125,5 +126,37 @@ class SecurityTest extends TestCase
         $response
             ->assertSessionHasErrors('current_password')
             ->assertRedirect(route('security.edit'));
+    }
+
+    public function test_security_page_includes_login_history(): void
+    {
+        $this->skipUnlessFortifyHas(Features::twoFactorAuthentication());
+
+        config(['fortify.features' => []]);
+
+        $user = User::factory()->create();
+        LoginHistory::factory()->count(3)->create(['user_id' => $user->id]);
+        LoginHistory::factory()->create(['user_id' => User::factory()->create()->id]);
+
+        $this->actingAs($user)
+            ->get(route('security.edit'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('settings/security')
+                ->has('loginHistory', 3));
+    }
+
+    public function test_security_page_login_history_is_capped_at_ten(): void
+    {
+        $this->skipUnlessFortifyHas(Features::twoFactorAuthentication());
+
+        config(['fortify.features' => []]);
+
+        $user = User::factory()->create();
+        LoginHistory::factory()->count(15)->create(['user_id' => $user->id]);
+
+        $this->actingAs($user)
+            ->get(route('security.edit'))
+            ->assertInertia(fn (Assert $page) => $page->has('loginHistory', 10));
     }
 }

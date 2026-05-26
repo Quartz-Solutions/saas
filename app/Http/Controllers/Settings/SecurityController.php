@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Settings;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Settings\PasswordUpdateRequest;
 use App\Http\Requests\Settings\TwoFactorAuthenticationRequest;
+use App\Models\LoginHistory;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
@@ -32,6 +33,20 @@ class SecurityController extends Controller implements HasMiddleware
     {
         $props = [
             'canManageTwoFactor' => Features::canManageTwoFactorAuthentication(),
+            'loginHistory' => LoginHistory::query()
+                ->where('user_id', $request->user()->id)
+                ->orderByDesc('created_at')
+                ->limit(10)
+                ->get(['id', 'outcome', 'method', 'ip', 'user_agent', 'created_at'])
+                ->map(fn ($row) => [
+                    'id' => (int) $row->id,
+                    'outcome' => (string) $row->outcome,
+                    'method' => $row->method !== null ? (string) $row->method : null,
+                    'ip' => $row->ip !== null ? (string) $row->ip : null,
+                    'user_agent' => $row->user_agent !== null ? (string) $row->user_agent : null,
+                    'created_at' => optional($row->created_at)->toIso8601String(),
+                ])
+                ->all(),
         ];
 
         if (Features::canManageTwoFactorAuthentication()) {

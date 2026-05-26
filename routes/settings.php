@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Settings\ProfileController;
 use App\Http\Controllers\Settings\SecurityController;
+use App\Http\Controllers\Settings\SessionsController;
 use App\Http\Controllers\Settings\UserPreferenceController;
 use Illuminate\Support\Facades\Route;
 
@@ -27,4 +28,11 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->name('preferences.show');
     Route::put('settings/preferences/{page}', [UserPreferenceController::class, 'update'])
         ->name('preferences.update');
+
+    Route::get('settings/sessions', [SessionsController::class, 'index'])
+        ->name('sessions.index');
+    Route::delete('settings/sessions', [SessionsController::class, 'destroyAll'])
+        ->name('sessions.destroyAll');
+    Route::delete('settings/sessions/{session}', [SessionsController::class, 'destroy'])
+        ->name('sessions.destroy');
 });

@@ -9,6 +9,7 @@ use App\Models\Payment;
 use App\Models\Plan;
 use App\Models\Subscription;
 use App\Models\Tenant;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -94,7 +95,7 @@ class BillingSchemaTest extends TestCase
     {
         Payment::factory()->create(['idempotency_key' => 'abc123']);
 
-        $this->expectException(\Illuminate\Database\QueryException::class);
+        $this->expectException(QueryException::class);
 
         Payment::factory()->create(['idempotency_key' => 'abc123']);
     }
@@ -117,7 +118,7 @@ class BillingSchemaTest extends TestCase
             'gateway_subscription_id' => 'sub_abc',
         ]);
 
-        $this->expectException(\Illuminate\Database\QueryException::class);
+        $this->expectException(QueryException::class);
 
         Subscription::factory()->create([
             'gateway' => 'stripe',
