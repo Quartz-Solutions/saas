@@ -18,6 +18,16 @@ class HandleAppearance
     {
         View::share('appearance', $request->cookie('appearance') ?? 'system');
 
+        // Allow per-request locale override via ?locale=ar (or cookie) for
+        // quick RTL spot-checks and i18n UAT. Falls back to app default.
+        $locale = $request->query('locale')
+            ?? $request->cookie('locale')
+            ?? config('app.locale', 'en');
+
+        if (is_string($locale) && $locale !== '') {
+            app()->setLocale($locale);
+        }
+
         return $next($request);
     }
 }

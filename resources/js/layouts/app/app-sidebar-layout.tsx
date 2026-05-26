@@ -2,6 +2,8 @@ import { AppContent } from '@/components/app-content';
 import { AppShell } from '@/components/app-shell';
 import { AppSidebar } from '@/components/app-sidebar';
 import { AppSidebarHeader } from '@/components/app-sidebar-header';
+import CommandPalette from '@/components/command-palette';
+import OnboardingWizard from '@/components/onboarding-wizard';
 import type { AppLayoutProps } from '@/types';
 
 export default function AppSidebarLayout({
@@ -15,6 +17,8 @@ export default function AppSidebarLayout({
                 <AppSidebarHeader breadcrumbs={breadcrumbs} />
                 {children}
             </AppContent>
+            <CommandPalette />
+            <OnboardingWizard />
         </AppShell>
     );
 }

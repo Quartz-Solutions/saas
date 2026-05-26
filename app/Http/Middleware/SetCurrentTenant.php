@@ -42,6 +42,11 @@ class SetCurrentTenant
                 $user->forceFill(['current_tenant_id' => $tenant->id])->save();
             }
 
+            $authUser = $request->user();
+            $isOwner = $authUser !== null && $tenant->owner_id === $authUser->id;
+            $settings = is_array($tenant->settings) ? $tenant->settings : [];
+            $onboardedAt = $settings['onboarded_at'] ?? null;
+
             Inertia::share([
                 'currentTenant' => fn () => [
                     'id' => $tenant->id,
@@ -52,6 +57,9 @@ class SetCurrentTenant
                     'currency' => $tenant->currency,
                     'locale' => $tenant->locale,
                     'status' => $tenant->status,
+                    'is_owner' => $isOwner,
+                    'created_at' => $tenant->created_at?->toIso8601String(),
+                    'onboarded_at' => $onboardedAt,
                 ],
             ]);
         } else {
