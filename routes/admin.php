@@ -1,10 +1,13 @@
 <?php
 
 use App\Http\Controllers\Admin\AuditLogsController;
+use App\Http\Controllers\Admin\DashboardController;
 use App\Http\Controllers\Admin\FeatureFlagOverridesController;
 use App\Http\Controllers\Admin\FeatureFlagsController;
 use App\Http\Controllers\Admin\PlansController;
 use App\Http\Controllers\Admin\SettingsController;
+use App\Http\Controllers\Admin\SubscriptionActionsController;
+use App\Http\Controllers\Admin\SubscriptionsAdminController;
 use App\Http\Controllers\Admin\TenantsAdminController;
 use App\Http\Controllers\Admin\WebhookEventsController;
 use Illuminate\Support\Facades\Route;
@@ -21,7 +24,7 @@ Route::middleware(['auth', 'verified', 'admin.scope', 'role:Super Admin'])
     ->name('admin.')
     ->group(function () {
         // Dashboard
-        Route::inertia('/', 'admin/dashboard')->name('dashboard');
+        Route::get('/', DashboardController::class)->name('dashboard');
 
         // Stop impersonation — must be available to anyone in an impersonation
         // session (the Super Admin is logged in as the target), so it bypasses
@@ -68,6 +71,30 @@ Route::middleware(['auth', 'verified', 'admin.scope', 'role:Super Admin'])
             ->only(['index', 'create', 'store', 'edit', 'update', 'destroy']);
         Route::post('plans/{plan}/restore', [PlansController::class, 'restore'])
             ->name('plans.restore');
+
+        // Subscriptions — admin index + show (Phase B).
+        Route::get('subscriptions', [SubscriptionsAdminController::class, 'index'])
+            ->name('subscriptions.index');
+        Route::get('subscriptions/export', [SubscriptionsAdminController::class, 'export'])
+            ->name('subscriptions.export');
+        Route::get('subscriptions/{subscription}', [SubscriptionsAdminController::class, 'show'])
+            ->name('subscriptions.show');
+
+        // Subscription admin actions (Phase C).
+        Route::post('subscriptions/{subscription}/change-plan', [SubscriptionActionsController::class, 'changePlan'])
+            ->name('subscriptions.change-plan');
+        Route::post('subscriptions/{subscription}/cancel', [SubscriptionActionsController::class, 'cancel'])
+            ->name('subscriptions.cancel');
+        Route::post('subscriptions/{subscription}/reactivate', [SubscriptionActionsController::class, 'reactivate'])
+            ->name('subscriptions.reactivate');
+        Route::post('subscriptions/{subscription}/credit', [SubscriptionActionsController::class, 'applyCredit'])
+            ->name('subscriptions.credit');
+        Route::post('subscriptions/{subscription}/comp', [SubscriptionActionsController::class, 'compMonths'])
+            ->name('subscriptions.comp');
+        Route::post('payments/{payment}/refund', [SubscriptionActionsController::class, 'refundPayment'])
+            ->name('payments.refund');
+        Route::post('invoices/{invoice}/manual-payment', [SubscriptionActionsController::class, 'recordManualPayment'])
+            ->name('invoices.manual-payment');
     });
 
 // Stop impersonation — gated only on `auth`. The current request's auth user

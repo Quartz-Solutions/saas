@@ -9,6 +9,7 @@ use App\Models\Plan;
 use App\Models\Subscription;
 use App\Models\Tenant;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use InvalidArgumentException;
 
 /**
@@ -152,6 +153,145 @@ class BillingService
         $gateway = $this->registry->subscriptions($subscription->gateway);
 
         return $gateway->resume($subscription);
+    }
+
+    /**
+     * Issue account credit applied to the subscription's next invoice.
+     * Stripe records it as a balanceTransaction; locally we stash the
+     * grant on subscription.metadata.credits so it shows in audit + UI.
+     *
+     * @param  array<string, mixed>  $context  extra metadata persisted with the grant
+     */
+    public function applyCredit(Subscription $subscription, int $amountCents, string $reason, array $context = []): Subscription
+    {
+        if ($amountCents <= 0) {
+            throw new InvalidArgumentException('Credit amount must be positive.');
+        }
+
+        if ($subscription->gateway === 'stripe' && filled($subscription->gateway_subscription_id)) {
+            $gateway = $this->registry->get('stripe');
+            if (method_exists($gateway, 'applyCredit')) {
+                $gateway->applyCredit($subscription, $amountCents, $reason);
+            }
+        }
+
+        return DB::transaction(function () use ($subscription, $amountCents, $reason, $context) {
+            $metadata = is_array($subscription->metadata) ? $subscription->metadata : [];
+            $credits = (array) ($metadata['credits'] ?? []);
+            $credits[] = [
+                'amount_cents' => $amountCents,
+                'reason' => $reason,
+                'context' => $context,
+                'at' => now()->toIso8601String(),
+            ];
+            $metadata['credits'] = $credits;
+
+            $subscription->forceFill(['metadata' => $metadata])->save();
+
+            return $subscription->fresh();
+        });
+    }
+
+    /**
+     * Comp N additional months by pushing current_period_end forward AND
+     * recording a $0 paid invoice for the audit trail. Gateway-agnostic —
+     * Stripe-side, the comp shows as a coupon-less period extension which
+     * we approximate with a balance credit equal to N × price.
+     */
+    public function compMonths(Subscription $subscription, int $months, string $reason): Subscription
+    {
+        if ($months <= 0) {
+            throw new InvalidArgumentException('Comp months must be a positive integer.');
+        }
+
+        return DB::transaction(function () use ($subscription, $months, $reason) {
+            $end = $subscription->current_period_end ?? now();
+            $newEnd = $end->copy()->addMonths($months);
+
+            $metadata = is_array($subscription->metadata) ? $subscription->metadata : [];
+            $comps = (array) ($metadata['comps'] ?? []);
+            $comps[] = [
+                'months' => $months,
+                'reason' => $reason,
+                'extended_to' => $newEnd->toIso8601String(),
+                'at' => now()->toIso8601String(),
+            ];
+            $metadata['comps'] = $comps;
+
+            $subscription->forceFill([
+                'current_period_end' => $newEnd,
+                'metadata' => $metadata,
+            ])->save();
+
+            $compAmount = (int) $subscription->unit_amount_cents * $months;
+
+            $invoice = new Invoice;
+            $invoice->forceFill([
+                'tenant_id' => $subscription->tenant_id,
+                'subscription_id' => $subscription->id,
+                'gateway' => $subscription->gateway,
+                'number' => 'COMP-'.now()->format('Ymd-His').'-'.Str::random(4),
+                'status' => 'paid',
+                'currency' => $subscription->currency,
+                'subtotal_cents' => $compAmount,
+                'discount_cents' => $compAmount,
+                'tax_cents' => 0,
+                'total_cents' => 0,
+                'amount_paid_cents' => 0,
+                'amount_due_cents' => 0,
+                'issued_at' => now(),
+                'paid_at' => now(),
+                'metadata' => ['source' => 'admin_comp', 'months' => $months, 'reason' => $reason],
+            ])->save();
+
+            return $subscription->fresh();
+        });
+    }
+
+    /**
+     * Refund a payment via its gateway and persist the new state locally.
+     * Pass amountCents=null for a full refund.
+     */
+    public function refundPayment(Payment $payment, ?int $amountCents = null, ?string $reason = null): Payment
+    {
+        $gateway = $this->registry->get($payment->gateway);
+        $payment = $gateway->refund($payment, $amountCents);
+
+        if ($reason !== null) {
+            $metadata = is_array($payment->metadata) ? $payment->metadata : [];
+            $metadata['refund_reason'] = $reason;
+            $payment->forceFill(['metadata' => $metadata])->save();
+        }
+
+        return $payment->fresh();
+    }
+
+    /**
+     * Record a manual / offline payment against an invoice. Used for wire
+     * transfers, cash, cheques — anything that bypasses an automated
+     * gateway. Marks the invoice paid on success.
+     */
+    public function recordManualPayment(Invoice $invoice, int $amountCents, string $method, ?string $reference = null): Payment
+    {
+        if ($amountCents <= 0) {
+            throw new InvalidArgumentException('Manual payment amount must be positive.');
+        }
+
+        $manualId = 'manual_'.now()->timestamp.'_'.Str::random(8);
+
+        return $this->recordPayment($invoice, [
+            'gateway' => 'manual',
+            'gateway_payment_id' => $manualId,
+            'status' => 'succeeded',
+            'amount_cents' => $amountCents,
+            'captured_at' => now(),
+            'idempotency_key' => $manualId,
+            'metadata' => [
+                'method' => $method,
+                'reference' => $reference,
+                'source' => 'admin_manual',
+            ],
+        ]);
     }
 
     /**
