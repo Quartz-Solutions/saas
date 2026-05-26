@@ -68,6 +68,6 @@ class Invoice extends Model
 
     public function lines(): HasMany
     {
-        return $this->hasMany('App\\Models\\InvoiceLine');
+        return $this->hasMany(InvoiceLine::class);
     }
 }
