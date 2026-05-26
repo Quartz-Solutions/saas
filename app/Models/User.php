@@ -33,6 +33,20 @@ class User extends Authenticatable
     /** @use HasFactory<UserFactory> */
     use HasApiTokens, HasFactory, HasRoles, Notifiable, TwoFactorAuthenticatable;
 
+    /**
+     * Fields the AuditObserver is allowed to record changes to.
+     * Everything else (password, locale, last_seen_at, etc.) stays out
+     * of the audit log to limit noise + PII exposure.
+     *
+     * @var array<int, string>
+     */
+    public static array $auditableFields = [
+        'name',
+        'email',
+        'email_verified_at',
+        'current_tenant_id',
+    ];
+
     protected function casts(): array
     {
         return [

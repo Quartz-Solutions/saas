@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Settings\DataExportController;
 use App\Http\Controllers\Settings\ProfileController;
 use App\Http\Controllers\Settings\SecurityController;
 use App\Http\Controllers\Settings\SessionsController;
@@ -35,4 +36,12 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->name('sessions.destroyAll');
     Route::delete('settings/sessions/{session}', [SessionsController::class, 'destroy'])
         ->name('sessions.destroy');
+
+    Route::get('settings/privacy', [DataExportController::class, 'index'])
+        ->name('privacy.index');
+    Route::post('settings/privacy/exports', [DataExportController::class, 'store'])
+        ->name('privacy.exports.store');
+    Route::get('settings/privacy/exports/{export}/download', [DataExportController::class, 'download'])
+        ->middleware('signed')
+        ->name('privacy.exports.download');
 });

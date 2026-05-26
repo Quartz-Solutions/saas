@@ -169,7 +169,10 @@ return [
     |
     */
 
-    'secure' => env('SESSION_SECURE_COOKIE'),
+    // When SESSION_SECURE_COOKIE is unset, fall back to "secure-on-prod":
+    // production deployments require HTTPS, so cookies should be marked
+    // `Secure`. Set SESSION_SECURE_COOKIE=true|false to override.
+    'secure' => env('SESSION_SECURE_COOKIE', env('APP_ENV') === 'production'),
 
     /*
     |--------------------------------------------------------------------------
