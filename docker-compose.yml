@@ -23,31 +23,7 @@ services:
     ports:
       - "${APP_PORT:-8080}:80"      # Laravel
       - "${VITE_PORT:-5173}:5173"    # Vite HMR
-    environment:
-      APP_NAME: POS
-      APP_ENV: local
-      APP_DEBUG: "true"
-      APP_URL: ${APP_URL:-http://localhost:8080}
-      APP_KEY: ${APP_KEY:-}
-      APP_LOCALE: en
-      APP_FALLBACK_LOCALE: en
-      LOG_CHANNEL: stderr
-      LOG_LEVEL: debug
-      DB_CONNECTION: pgsql
-      DB_HOST: db
-      DB_PORT: 5432
-      DB_DATABASE: pos
-      DB_USERNAME: pos
-      DB_PASSWORD: ${DB_PASSWORD:-pos_secret}
-      CACHE_STORE: redis
-      SESSION_DRIVER: redis
-      QUEUE_CONNECTION: redis
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      MAIL_MAILER: log
-      MAIL_FROM_ADDRESS: noreply@pos.local
-      MAIL_FROM_NAME: POS
-      VITE_HMR_HOST: localhost
+    env_file: .env
     volumes:
       # Source code — live edits on host appear in container.
       - .:/var/www/html
@@ -76,8 +52,8 @@ services:
     container_name: pos-db
     restart: unless-stopped
     environment:
-      POSTGRES_DB: pos
-      POSTGRES_USER: pos
+      POSTGRES_DB: ${DB_DATABASE:-pos}
+      POSTGRES_USER: ${DB_USERNAME:-pos}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-pos_secret}
     volumes:
       - dbdata:/var/lib/postgresql/data

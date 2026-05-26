@@ -38,7 +38,7 @@ RUN apk add --no-cache --virtual .build-deps $PHPIZE_DEPS \
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
 # ---- pnpm ------------------------------------------------------------------
-RUN npm install -g pnpm@latest
+RUN npm install -g pnpm@10
 
 WORKDIR /var/www/html
 
