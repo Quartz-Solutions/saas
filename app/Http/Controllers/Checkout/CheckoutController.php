@@ -132,17 +132,17 @@ class CheckoutController extends Controller
             ]));
         }
 
-        $session->refresh();
-
-        // Redirect-kind → 302 to the gateway URL. All other kinds render
-        // the next-step inside /checkout/{session}.
-        if ($session->result_kind === CheckoutSession::KIND_REDIRECT) {
-            $url = (string) ($session->result_payload['url'] ?? '');
-            if ($url !== '') {
-                return redirect()->away($url);
-            }
-        }
-
+        // Always redirect back to /checkout/{session}. The React side reads
+        // result_kind + result_payload from the session and renders the
+        // appropriate next step — CheckoutNextStep handles `redirect` via
+        // window.location.href, iframe/widget in-page, form_post as a
+        // self-submitting form, kiosk_ref as a static card.
+        //
+        // We intentionally do NOT `redirect()->away($url)` here: Inertia's
+        // client doesn't follow external redirects from a POST response.
+        // Routing every result through CheckoutNextStep also keeps the
+        // controller polymorphic — adding a new result_kind requires no
+        // controller change.
         return redirect()->route('checkout.show', ['session' => $session->public_id]);
     }
 
