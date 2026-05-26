@@ -1,5 +1,7 @@
 <?php
 
+use App\Http\Controllers\Notifications\NotificationsController;
+use App\Http\Controllers\Settings\NotificationsPreferencesController;
 use App\Http\Controllers\Settings\ProfileController;
 use App\Http\Controllers\Settings\SecurityController;
 use App\Http\Controllers\Settings\SessionsController;
@@ -35,4 +37,16 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->name('sessions.destroyAll');
     Route::delete('settings/sessions/{session}', [SessionsController::class, 'destroy'])
         ->name('sessions.destroy');
+
+    // Notification preferences (channel × event matrix).
+    Route::get('settings/notifications', [NotificationsPreferencesController::class, 'edit'])
+        ->name('settings.notifications.edit');
+    Route::patch('settings/notifications', [NotificationsPreferencesController::class, 'update'])
+        ->name('settings.notifications.update');
+
+    // In-app notification bell — mark-as-read endpoints.
+    Route::patch('notifications/{id}/read', [NotificationsController::class, 'markRead'])
+        ->name('notifications.read');
+    Route::patch('notifications/read-all', [NotificationsController::class, 'markAllRead'])
+        ->name('notifications.read-all');
 });

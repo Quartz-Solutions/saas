@@ -10,8 +10,23 @@ export type User = {
     [key: string]: unknown;
 };
 
+export type NotificationItem = {
+    id: string;
+    type: string;
+    data: Record<string, unknown> & {
+        event?: string;
+        title?: string;
+        description?: string | null;
+    };
+    read_at: string | null;
+    created_at: string | null;
+    created_at_human: string | null;
+};
+
 export type Auth = {
     user: User;
+    unreadNotificationsCount: number;
+    notifications: NotificationItem[];
 };
 
 export type TwoFactorSetupData = {

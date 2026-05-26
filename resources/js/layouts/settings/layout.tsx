@@ -9,6 +9,7 @@ import { edit as editAppearance } from '@/routes/appearance';
 import { edit } from '@/routes/profile';
 import { edit as editSecurity } from '@/routes/security';
 import { index as sessionsIndex } from '@/routes/sessions';
+import { edit as editNotifications } from '@/routes/settings/notifications';
 import type { NavItem } from '@/types';
 
 const sidebarNavItems: NavItem[] = [
@@ -25,6 +26,11 @@ const sidebarNavItems: NavItem[] = [
     {
         title: 'Sessions',
         href: sessionsIndex(),
+        icon: null,
+    },
+    {
+        title: 'Notifications',
+        href: editNotifications(),
         icon: null,
     },
     {

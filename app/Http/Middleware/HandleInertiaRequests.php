@@ -37,11 +37,31 @@ class HandleInertiaRequests extends Middleware
      */
     public function share(Request $request): array
     {
+        $user = $request->user();
+
         return [
             ...parent::share($request),
             'name' => config('app.name'),
             'auth' => [
-                'user' => $request->user(),
+                'user' => $user,
+                'unreadNotificationsCount' => fn () => $user
+                    ? (int) $user->unreadNotifications()->count()
+                    : 0,
+                'notifications' => fn () => $user
+                    ? $user->notifications()
+                        ->latest()
+                        ->limit(10)
+                        ->get()
+                        ->map(fn ($n) => [
+                            'id' => $n->id,
+                            'type' => $n->type,
+                            'data' => $n->data,
+                            'read_at' => optional($n->read_at)?->toIso8601String(),
+                            'created_at' => optional($n->created_at)?->toIso8601String(),
+                            'created_at_human' => optional($n->created_at)?->diffForHumans(),
+                        ])
+                        ->all()
+                    : [],
             ],
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
             'cookieConsent' => $request->cookie(CookieConsentController::COOKIE_NAME),
