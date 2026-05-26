@@ -3,6 +3,7 @@ import {
     Building2,
     ClipboardList,
     Cog,
+    CreditCard,
     Flag,
     LayoutGrid,
     LogOut,
@@ -18,6 +19,7 @@ import type { NavItem } from '@/types';
 import { dashboard as adminDashboard, stopImpersonating } from '@/routes/admin';
 import { index as auditIndex } from '@/routes/admin/audit';
 import { index as featureFlagsIndex } from '@/routes/admin/feature-flags';
+import { index as plansIndex } from '@/routes/admin/plans';
 import { index as settingsIndex } from '@/routes/admin/settings';
 import { index as tenantsIndex } from '@/routes/admin/tenants';
 import { index as webhooksIndex } from '@/routes/admin/webhooks';
@@ -32,6 +34,11 @@ const sidebarNavItems: NavItem[] = [
         title: 'Tenants',
         href: tenantsIndex(),
         icon: Building2,
+    },
+    {
+        title: 'Plans',
+        href: plansIndex(),
+        icon: CreditCard,
     },
     {
         title: 'Webhooks',

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Billing\CancelSubscriptionRequest;
 use App\Http\Requests\Billing\ResumeSubscriptionRequest;
 use App\Http\Requests\Billing\SubscribeRequest;
+use App\Models\Plan;
 use App\Models\Tenant;
 use App\Support\Billing\BillingService;
 use App\Support\Billing\GatewayRegistry;
@@ -31,21 +32,28 @@ class BillingController extends Controller
 
         $current = $this->billing->currentSubscription($tenant);
 
-        $plans = collect((array) config('billing.plans', []))
-            ->map(function (array $plan, string $slug) use ($current) {
-                return [
-                    'slug' => $slug,
-                    'name' => $plan['name'] ?? $slug,
-                    'description' => $plan['description'] ?? '',
-                    'price_cents' => (int) ($plan['price_cents'] ?? 0),
-                    'currency' => $plan['currency'] ?? config('billing.default_currency', 'USD'),
-                    'interval' => $plan['interval'] ?? 'month',
-                    'features' => (array) ($plan['features'] ?? []),
-                    'cta' => $plan['cta'] ?? 'Choose plan',
-                    'highlighted' => (bool) ($plan['highlighted'] ?? false),
-                    'is_current' => $current && $current->plan && $current->plan->slug === $slug,
-                ];
-            })
+        $plans = Plan::query()
+            ->where('is_active', true)
+            ->where('is_public', true)
+            ->orderBy('sort_order')
+            ->orderBy('price_cents')
+            ->get()
+            ->map(fn (Plan $plan) => [
+                'slug' => $plan->slug,
+                'name' => $plan->name,
+                'description' => $plan->description ?? '',
+                'price_cents' => (int) $plan->price_cents,
+                'currency' => $plan->currency,
+                'interval' => $plan->billing_period,
+                'features' => (array) $plan->features,
+                'cta' => (int) $plan->price_cents === 0
+                    ? 'Start free'
+                    : ($plan->trial_days > 0 ? "Start {$plan->trial_days}-day trial" : 'Choose plan'),
+                'highlighted' => false,
+                'is_current' => $current !== null
+                    && $current->plan
+                    && $current->plan->slug === $plan->slug,
+            ])
             ->values()
             ->all();
 
@@ -77,7 +85,10 @@ class BillingController extends Controller
     public function subscribe(SubscribeRequest $request, string $tenantSlug): RedirectResponse
     {
         $tenant = $this->currentTenant();
-        $plan = $this->billing->planForSlug($request->string('plan'));
+        $plan = Plan::query()
+            ->where('slug', $request->string('plan'))
+            ->where('is_active', true)
+            ->firstOrFail();
         $gatewayId = $request->string('gateway')->toString() ?: (string) config('billing.default_gateway');
 
         $current = $this->billing->currentSubscription($tenant);

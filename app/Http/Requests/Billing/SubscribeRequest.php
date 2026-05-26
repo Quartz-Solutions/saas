@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Billing;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 /**
  * Validates the "subscribe / upgrade to plan" form.
@@ -32,7 +33,12 @@ class SubscribeRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'plan' => ['required', 'string', 'in:'.implode(',', array_keys((array) config('billing.plans', [])))],
+            'plan' => [
+                'required', 'string',
+                Rule::exists('plans', 'slug')
+                    ->where('is_active', true)
+                    ->whereNull('deleted_at'),
+            ],
             'gateway' => ['nullable', 'string'],
         ];
     }

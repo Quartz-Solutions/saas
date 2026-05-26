@@ -52,6 +52,100 @@ class StripeGateway implements PaymentGateway, SubscriptionGateway
     }
 
     /**
+     * Ensure a Stripe Product + Price exists for the given local Plan and
+     * return the Price ID. Stripe Prices are immutable, so a price/currency/
+     * period change here creates a NEW Price; existing subscriptions on the
+     * old Price are untouched until they migrate.
+     *
+     * Idempotent — Product lookup is by metadata.plan_slug; Price reuse is
+     * by the fingerprint stored on Plan::gateway_ids.stripe_fingerprint.
+     */
+    public function syncPriceForPlan(Plan $plan): ?string
+    {
+        if ((int) $plan->price_cents === 0) {
+            return null; // Free plans don't need a Stripe Price.
+        }
+
+        $product = $this->ensureProductForPlan($plan);
+
+        $fingerprint = $this->planFingerprint($plan);
+        $existingIds = (array) ($plan->gateway_ids ?? []);
+        $existingPriceId = $existingIds['stripe'] ?? null;
+        $existingFingerprint = $existingIds['stripe_fingerprint'] ?? null;
+
+        if ($existingPriceId !== null && $existingFingerprint === $fingerprint) {
+            return $existingPriceId;
+        }
+
+        $price = $this->client->prices->create([
+            'product' => $product->id,
+            'currency' => strtolower((string) $plan->currency),
+            'unit_amount' => (int) $plan->price_cents,
+            'recurring' => [
+                'interval' => $this->stripeInterval($plan->billing_period),
+                'interval_count' => max(1, (int) $plan->billing_interval),
+            ],
+            'metadata' => [
+                'plan_id' => (string) $plan->id,
+                'plan_slug' => $plan->slug,
+            ],
+        ]);
+
+        $plan->forceFill([
+            'gateway_ids' => array_merge($existingIds, [
+                'stripe' => $price->id,
+                'stripe_product' => $product->id,
+                'stripe_fingerprint' => $fingerprint,
+            ]),
+        ])->save();
+
+        return $price->id;
+    }
+
+    protected function ensureProductForPlan(Plan $plan): StripeObject
+    {
+        $existingProductId = $plan->gateway_ids['stripe_product'] ?? null;
+
+        if ($existingProductId !== null) {
+            try {
+                return $this->client->products->retrieve($existingProductId);
+            } catch (Throwable) {
+                // Product was deleted in Stripe — fall through and recreate.
+            }
+        }
+
+        return $this->client->products->create([
+            'name' => $plan->name,
+            'description' => $plan->description,
+            'metadata' => [
+                'plan_id' => (string) $plan->id,
+                'plan_slug' => $plan->slug,
+            ],
+        ]);
+    }
+
+    protected function planFingerprint(Plan $plan): string
+    {
+        return hash('sha256', implode('|', [
+            (int) $plan->price_cents,
+            strtoupper((string) $plan->currency),
+            (string) $plan->billing_period,
+            (int) $plan->billing_interval,
+        ]));
+    }
+
+    protected function stripeInterval(string $period): string
+    {
+        return match ($period) {
+            'day' => 'day',
+            'week' => 'week',
+            'month' => 'month',
+            'year' => 'year',
+            default => throw new RuntimeException("Stripe does not support billing period [{$period}]."),
+        };
+    }
+
+    /**
      * Build a Customer Portal URL for the tenant.
      */
     public function customerPortalUrl(Tenant $tenant, string $returnUrl): string

@@ -3,6 +3,7 @@
 namespace Tests\Feature\Marketing;
 
 use App\Models\CmsPage;
+use Database\Seeders\PlansSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia;
 use Tests\TestCase;
@@ -28,8 +29,10 @@ class MarketingRoutesTest extends TestCase
         $this->get(route('home'))->assertOk();
     }
 
-    public function test_pricing_page_renders_with_config_plans(): void
+    public function test_pricing_page_renders_with_seeded_plans(): void
     {
+        $this->seed(PlansSeeder::class);
+
         $response = $this->get(route('marketing.pricing'));
 
         $response->assertOk();

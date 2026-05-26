@@ -3,6 +3,7 @@
 use App\Http\Controllers\Admin\AuditLogsController;
 use App\Http\Controllers\Admin\FeatureFlagOverridesController;
 use App\Http\Controllers\Admin\FeatureFlagsController;
+use App\Http\Controllers\Admin\PlansController;
 use App\Http\Controllers\Admin\SettingsController;
 use App\Http\Controllers\Admin\TenantsAdminController;
 use App\Http\Controllers\Admin\WebhookEventsController;
@@ -61,6 +62,12 @@ Route::middleware(['auth', 'verified', 'admin.scope', 'role:Super Admin'])
         Route::get('settings', [SettingsController::class, 'index'])->name('settings.index');
         Route::patch('settings/{group}', [SettingsController::class, 'update'])->name('settings.update');
         Route::post('settings/{group}/test', [SettingsController::class, 'test'])->name('settings.test');
+
+        // Plans — DB-owned plan catalog (Phase A).
+        Route::resource('plans', PlansController::class)
+            ->only(['index', 'create', 'store', 'edit', 'update', 'destroy']);
+        Route::post('plans/{plan}/restore', [PlansController::class, 'restore'])
+            ->name('plans.restore');
     });
 
 // Stop impersonation — gated only on `auth`. The current request's auth user

@@ -4,6 +4,7 @@ namespace Tests\Feature\Billing;
 
 use App\Models\User;
 use App\Support\Tenancy\TenantService;
+use Database\Seeders\PlansSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -11,8 +12,10 @@ class PlanPickerTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_plan_picker_renders_with_plans_from_config(): void
+    public function test_plan_picker_renders_with_plans_from_db(): void
     {
+        $this->seed(PlansSeeder::class);
+
         $owner = User::factory()->create();
         $tenant = app(TenantService::class)->create($owner, ['name' => 'Acme']);
 
@@ -21,7 +24,7 @@ class PlanPickerTest extends TestCase
             ->assertOk()
             ->assertInertia(fn ($p) => $p
                 ->component('billing/plans')
-                ->has('plans', count((array) config('billing.plans')))
+                ->has('plans', 3)
                 ->where('plans.0.slug', 'free')
                 ->where('subscription', null)
             );
@@ -55,6 +58,8 @@ class PlanPickerTest extends TestCase
 
     public function test_subscribe_to_free_plan_records_subscription(): void
     {
+        $this->seed(PlansSeeder::class);
+
         $owner = User::factory()->create();
         $tenant = app(TenantService::class)->create($owner, ['name' => 'Acme']);
 
