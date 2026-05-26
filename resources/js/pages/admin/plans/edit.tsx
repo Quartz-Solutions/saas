@@ -1,5 +1,5 @@
 import { Form, Head, Link } from '@inertiajs/react';
-import { ArrowLeft, Plus, Save, Trash2 } from 'lucide-react';
+import { ArrowLeft, Save } from 'lucide-react';
 import { useState } from 'react';
 import Heading from '@/components/heading';
 import InputError from '@/components/input-error';
@@ -13,6 +13,7 @@ import {
     CardHeader,
     CardTitle,
 } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -28,6 +29,11 @@ import { Textarea } from '@/components/ui/textarea';
 import PlansController from '@/actions/App/Http/Controllers/Admin/PlansController';
 import { index as plansIndex } from '@/routes/admin/plans';
 
+const UNLIMITED = -1;
+
+type FeatureValue = boolean | number;
+type FeaturesMap = Record<string, FeatureValue>;
+
 type Plan = {
     id: number;
     slug: string;
@@ -38,7 +44,7 @@ type Plan = {
     billing_period: string;
     billing_interval: number;
     trial_days: number;
-    features: string[];
+    features: FeaturesMap;
     gateway_ids: Record<string, string | null>;
     is_active: boolean;
     is_public: boolean;
@@ -48,12 +54,27 @@ type Plan = {
 
 type Currency = { code: string; name: string };
 
+type FeatureCatalogItem = {
+    slug: string;
+    name: string;
+    description: string | null;
+    type: 'boolean' | 'quota';
+    unit: string | null;
+    unlimited_label: string | null;
+};
+
+type FeatureCatalogGroup = {
+    category: string;
+    items: FeatureCatalogItem[];
+};
+
 type Props = {
     plan: Plan | null;
     currencies: Currency[];
+    featureCatalog: FeatureCatalogGroup[];
 };
 
-export default function PlanEdit({ plan, currencies }: Props) {
+export default function PlanEdit({ plan, currencies, featureCatalog }: Props) {
     const isEdit = plan !== null;
 
     const [name, setName] = useState(plan?.name ?? '');
@@ -66,10 +87,26 @@ export default function PlanEdit({ plan, currencies }: Props) {
     const [billingPeriod, setBillingPeriod] = useState(plan?.billing_period ?? 'month');
     const [billingInterval, setBillingInterval] = useState(plan?.billing_interval ?? 1);
     const [trialDays, setTrialDays] = useState(plan?.trial_days ?? 0);
-    const [features, setFeatures] = useState<string[]>(plan?.features ?? []);
+    const [features, setFeatures] = useState<FeaturesMap>(
+        () => (plan?.features as FeaturesMap | undefined) ?? {},
+    );
     const [isActive, setIsActive] = useState(plan?.is_active ?? true);
     const [isPublic, setIsPublic] = useState(plan?.is_public ?? true);
     const [sortOrder, setSortOrder] = useState(plan?.sort_order ?? 0);
+
+    const setFeature = (slug: string, value: FeatureValue | null) => {
+        setFeatures((prev) => {
+            const next = { ...prev };
+            if (value === null) {
+                delete next[slug];
+            } else {
+                next[slug] = value;
+            }
+            return next;
+        });
+    };
+
+    const selectedSlugs = Object.keys(features);
 
     const priceCents = Math.round(Number(priceDollars || '0') * 100);
 
@@ -287,47 +324,67 @@ export default function PlanEdit({ plan, currencies }: Props) {
                                 <CardHeader>
                                     <CardTitle>Features</CardTitle>
                                     <CardDescription>
-                                        Bullet points shown on /pricing.
+                                        Toggle a feature on, then set its limit. Quotas accept a
+                                        number or "Unlimited"; booleans are present/absent. The
+                                        catalog lives in <code className="text-xs">config/billing.php</code>.
                                     </CardDescription>
                                 </CardHeader>
-                                <CardContent className="space-y-3">
-                                    {features.map((f, i) => (
-                                        <div key={i} className="flex items-center gap-2">
-                                            <Input
-                                                value={f}
-                                                onChange={(e) => {
-                                                    const next = [...features];
-                                                    next[i] = e.target.value;
-                                                    setFeatures(next);
-                                                }}
-                                            />
-                                            <input
-                                                type="hidden"
-                                                name={`features[${i}]`}
-                                                value={f}
-                                            />
-                                            <Button
-                                                type="button"
-                                                variant="ghost"
-                                                size="icon"
-                                                onClick={() =>
-                                                    setFeatures(features.filter((_, j) => j !== i))
-                                                }
-                                            >
-                                                <Trash2 className="size-4" />
-                                            </Button>
+                                <CardContent className="space-y-6">
+                                    {featureCatalog.map((group) => (
+                                        <div key={group.category} className="space-y-3">
+                                            <h3 className="text-sm font-medium text-muted-foreground">
+                                                {group.category}
+                                            </h3>
+                                            <div className="space-y-2">
+                                                {group.items.map((item) =>
+                                                    item.type === 'quota' ? (
+                                                        <QuotaRow
+                                                            key={item.slug}
+                                                            item={item}
+                                                            value={features[item.slug]}
+                                                            setValue={(v) => setFeature(item.slug, v)}
+                                                            error={errors[`features.${item.slug}`]}
+                                                        />
+                                                    ) : (
+                                                        <BooleanRow
+                                                            key={item.slug}
+                                                            item={item}
+                                                            checked={Boolean(features[item.slug])}
+                                                            onToggle={(checked) =>
+                                                                setFeature(
+                                                                    item.slug,
+                                                                    checked ? true : null,
+                                                                )
+                                                            }
+                                                            error={errors[`features.${item.slug}`]}
+                                                        />
+                                                    ),
+                                                )}
+                                            </div>
                                         </div>
                                     ))}
-                                    <Button
-                                        type="button"
-                                        variant="outline"
-                                        size="sm"
-                                        onClick={() => setFeatures([...features, ''])}
-                                    >
-                                        <Plus className="size-4" />
-                                        Add feature
-                                    </Button>
+                                    {/* Hidden inputs — submit map shape as features[slug]=value */}
+                                    {selectedSlugs.map((slug) => {
+                                        const value = features[slug];
+                                        const submitValue =
+                                            value === true
+                                                ? '1'
+                                                : value === false
+                                                  ? '0'
+                                                  : String(value);
+                                        return (
+                                            <input
+                                                key={slug}
+                                                type="hidden"
+                                                name={`features[${slug}]`}
+                                                value={submitValue}
+                                            />
+                                        );
+                                    })}
                                     <InputError message={errors.features} />
+                                    <p className="text-xs text-muted-foreground">
+                                        {selectedSlugs.length} feature(s) on this plan.
+                                    </p>
                                 </CardContent>
                             </Card>
                         </div>
@@ -440,5 +497,122 @@ export default function PlanEdit({ plan, currencies }: Props) {
                 )}
             </Form>
         </>
+    );
+}
+
+function BooleanRow({
+    item,
+    checked,
+    onToggle,
+    error,
+}: {
+    item: FeatureCatalogItem;
+    checked: boolean;
+    onToggle: (checked: boolean) => void;
+    error?: string;
+}) {
+    const id = `feature-${item.slug}`;
+    return (
+        <div className="rounded-md border bg-muted/20 p-3">
+            <label htmlFor={id} className="flex cursor-pointer items-start gap-3">
+                <Checkbox
+                    id={id}
+                    checked={checked}
+                    onCheckedChange={(v) => onToggle(Boolean(v))}
+                    className="mt-0.5"
+                />
+                <div className="flex-1">
+                    <div className="text-sm font-medium">{item.name}</div>
+                    <div className="font-mono text-xs text-muted-foreground">{item.slug}</div>
+                    {item.description ? (
+                        <div className="mt-0.5 text-xs text-muted-foreground">
+                            {item.description}
+                        </div>
+                    ) : null}
+                </div>
+                <Badge variant="outline" className="text-xs">
+                    boolean
+                </Badge>
+            </label>
+            <InputError message={error} />
+        </div>
+    );
+}
+
+function QuotaRow({
+    item,
+    value,
+    setValue,
+    error,
+}: {
+    item: FeatureCatalogItem;
+    value: FeatureValue | undefined;
+    setValue: (v: FeatureValue | null) => void;
+    error?: string;
+}) {
+    const id = `feature-${item.slug}`;
+    const included = value !== undefined;
+    const unlimited = value === UNLIMITED;
+    const numericValue = typeof value === 'number' && value !== UNLIMITED ? value : 1;
+
+    return (
+        <div className="rounded-md border bg-muted/20 p-3">
+            <div className="flex items-start gap-3">
+                <Checkbox
+                    id={id}
+                    checked={included}
+                    onCheckedChange={(v) => setValue(v ? numericValue : null)}
+                    className="mt-0.5"
+                />
+                <div className="flex-1">
+                    <label htmlFor={id} className="cursor-pointer">
+                        <div className="text-sm font-medium">{item.name}</div>
+                        <div className="font-mono text-xs text-muted-foreground">{item.slug}</div>
+                        {item.description ? (
+                            <div className="mt-0.5 text-xs text-muted-foreground">
+                                {item.description}
+                            </div>
+                        ) : null}
+                    </label>
+
+                    {included ? (
+                        <div className="mt-3 flex flex-wrap items-center gap-3">
+                            <div className="flex items-center gap-2">
+                                <Input
+                                    type="number"
+                                    min="1"
+                                    value={unlimited ? '' : numericValue}
+                                    placeholder={unlimited ? '∞' : '1'}
+                                    onChange={(e) => {
+                                        const n = Number(e.target.value);
+                                        if (Number.isFinite(n) && n > 0) {
+                                            setValue(n);
+                                        }
+                                    }}
+                                    disabled={unlimited}
+                                    className="w-24 font-mono"
+                                />
+                                <span className="text-xs text-muted-foreground">
+                                    {item.unit ?? ''}
+                                </span>
+                            </div>
+                            <label className="flex cursor-pointer items-center gap-2 text-xs">
+                                <Switch
+                                    checked={unlimited}
+                                    onCheckedChange={(v) =>
+                                        setValue(v ? UNLIMITED : numericValue)
+                                    }
+                                />
+                                <span>Unlimited</span>
+                            </label>
+                        </div>
+                    ) : null}
+                </div>
+                <Badge variant="outline" className="text-xs">
+                    quota
+                </Badge>
+            </div>
+            <InputError message={error} />
+        </div>
     );
 }

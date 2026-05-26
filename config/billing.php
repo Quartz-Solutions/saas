@@ -68,11 +68,136 @@ return [
 
     /*
     |---------------------------------------------------------------------
+    | Features catalog
+    |---------------------------------------------------------------------
+    | Master registry of every feature the SaaS exposes. Plans reference
+    | features by SLUG (the array key); code gates with hasFeature() /
+    | featureLimit() on Plan and Tenant.
+    |
+    | Two feature types:
+    |
+    |   type: 'boolean'  → present or absent on a plan.
+    |                      Stored as: { "api_access": true }
+    |
+    |   type: 'quota'    → present with a numeric limit, or unlimited.
+    |                      Stored as: { "projects": 5 } or { "projects": -1 }
+    |                      `-1` is the unlimited sentinel.
+    |                      `unit` is the singular unit name; Str::plural
+    |                      handles "1 project" vs "20 projects".
+    |                      `unlimited_label` is the bullet shown on /pricing
+    |                      when value === -1.
+    |
+    | Add a new feature here first; the admin plan builder reads this catalog
+    | and the ValidFeaturesMap rule rejects unknown slugs / wrong-typed values.
+    */
+
+    'features' => [
+
+        // Core
+        'projects' => [
+            'name' => 'Projects',
+            'description' => 'Top-level workspaces a tenant can create.',
+            'category' => 'Core',
+            'type' => 'quota',
+            'unit' => 'project',
+            'unlimited_label' => 'Unlimited projects',
+        ],
+        'storage_gb' => [
+            'name' => 'Storage',
+            'description' => 'Disk space across uploads + attachments.',
+            'category' => 'Core',
+            'type' => 'quota',
+            'unit' => 'GB',
+            'unlimited_label' => 'Unlimited storage',
+        ],
+        'basic_analytics' => [
+            'name' => 'Basic analytics',
+            'description' => null,
+            'category' => 'Core',
+            'type' => 'boolean',
+        ],
+        'advanced_analytics' => [
+            'name' => 'Advanced analytics',
+            'description' => null,
+            'category' => 'Core',
+            'type' => 'boolean',
+        ],
+
+        // Team
+        'team_seats' => [
+            'name' => 'Team members',
+            'description' => 'Users that can be invited to the tenant.',
+            'category' => 'Team',
+            'type' => 'quota',
+            'unit' => 'team member',
+            'unlimited_label' => 'Unlimited team members',
+        ],
+
+        // Support
+        'community_support' => [
+            'name' => 'Community support',
+            'description' => null,
+            'category' => 'Support',
+            'type' => 'boolean',
+        ],
+        'priority_support' => [
+            'name' => 'Priority email support',
+            'description' => null,
+            'category' => 'Support',
+            'type' => 'boolean',
+        ],
+        'dedicated_account_manager' => [
+            'name' => 'Dedicated account manager',
+            'description' => null,
+            'category' => 'Support',
+            'type' => 'boolean',
+        ],
+        'custom_sla' => [
+            'name' => 'Custom SLA',
+            'description' => null,
+            'category' => 'Support',
+            'type' => 'boolean',
+        ],
+
+        // Integrations
+        'api_access' => [
+            'name' => 'API access',
+            'description' => 'Personal access tokens + /api/v1 endpoints.',
+            'category' => 'Integrations',
+            'type' => 'boolean',
+        ],
+        'webhooks' => [
+            'name' => 'Outbound webhooks',
+            'description' => 'Subscribe to tenant events.',
+            'category' => 'Integrations',
+            'type' => 'boolean',
+        ],
+
+        // Security & compliance
+        'sso_saml' => [
+            'name' => 'SSO / SAML',
+            'description' => null,
+            'category' => 'Security & compliance',
+            'type' => 'boolean',
+        ],
+        'audit_log_export' => [
+            'name' => 'Audit log export',
+            'description' => null,
+            'category' => 'Security & compliance',
+            'type' => 'boolean',
+        ],
+
+    ],
+
+    /*
+    |---------------------------------------------------------------------
     | Plans
     |---------------------------------------------------------------------
     | Source of truth for the plan picker UI and the public pricing page.
     | The Stripe price ids in `gateway_prices.stripe` are looked up at
     | runtime by StripeGateway::createSubscription().
+    |
+    | `features` values must be slugs defined above.
     */
 
     'plans' => [
@@ -85,10 +210,13 @@ return [
             'currency' => 'USD',
             'interval' => 'month',
             'features' => [
-                '1 project',
-                'Community support',
-                'Up to 3 team members',
-                'Basic analytics',
+                // booleans
+                'community_support' => true,
+                'basic_analytics' => true,
+                // quotas (integer = limit; -1 = unlimited)
+                'projects' => 1,
+                'team_seats' => 3,
+                'storage_gb' => 1,
             ],
             'cta' => 'Start free',
             'highlighted' => false,
@@ -105,12 +233,13 @@ return [
             'currency' => 'USD',
             'interval' => 'month',
             'features' => [
-                'Unlimited projects',
-                'Priority email support',
-                'Up to 20 team members',
-                'Advanced analytics',
-                'API access',
-                'Webhooks',
+                'priority_support' => true,
+                'advanced_analytics' => true,
+                'api_access' => true,
+                'webhooks' => true,
+                'projects' => -1,        // unlimited
+                'team_seats' => 20,
+                'storage_gb' => 100,
             ],
             'cta' => 'Start 14-day trial',
             'highlighted' => true,
@@ -127,12 +256,17 @@ return [
             'currency' => 'USD',
             'interval' => 'month',
             'features' => [
-                'Everything in Pro',
-                'SSO / SAML',
-                'Dedicated account manager',
-                'Custom SLA',
-                'Unlimited team members',
-                'Audit log export',
+                'priority_support' => true,
+                'advanced_analytics' => true,
+                'api_access' => true,
+                'webhooks' => true,
+                'sso_saml' => true,
+                'dedicated_account_manager' => true,
+                'custom_sla' => true,
+                'audit_log_export' => true,
+                'projects' => -1,
+                'team_seats' => -1,
+                'storage_gb' => -1,
             ],
             'cta' => 'Contact sales',
             'highlighted' => false,

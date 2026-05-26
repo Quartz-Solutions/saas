@@ -2,6 +2,8 @@
 
 namespace App\Http\Requests\Admin;
 
+use App\Rules\ValidFeaturesMap;
+
 class PlanStoreRequest extends AdminFormRequest
 {
     /**
@@ -18,8 +20,7 @@ class PlanStoreRequest extends AdminFormRequest
             'billing_period' => ['required', 'in:day,week,month,year,one_time'],
             'billing_interval' => ['required', 'integer', 'min:1', 'max:24'],
             'trial_days' => ['required', 'integer', 'min:0', 'max:365'],
-            'features' => ['nullable', 'array'],
-            'features.*' => ['string', 'max:255'],
+            'features' => ['nullable', 'array', new ValidFeaturesMap],
             'is_active' => ['required', 'boolean'],
             'is_public' => ['required', 'boolean'],
             'sort_order' => ['required', 'integer', 'min:0', 'max:9999'],

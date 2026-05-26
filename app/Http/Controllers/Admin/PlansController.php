@@ -92,6 +92,7 @@ class PlansController extends Controller
         return Inertia::render('admin/plans/edit', [
             'plan' => null,
             'currencies' => $this->currencies(),
+            'featureCatalog' => $this->featureCatalog(),
         ]);
     }
 
@@ -111,6 +112,7 @@ class PlansController extends Controller
                 $q->whereIn('status', ['trialing', 'active', 'past_due']);
             }])),
             'currencies' => $this->currencies(),
+            'featureCatalog' => $this->featureCatalog(),
         ]);
     }
 
@@ -167,7 +169,8 @@ class PlansController extends Controller
             'billing_period' => $plan->billing_period,
             'billing_interval' => (int) $plan->billing_interval,
             'trial_days' => (int) $plan->trial_days,
-            'features' => $plan->features ?? [],
+            'features' => (array) ($plan->features ?? []),
+            'features_resolved' => $plan->featuresWithMetadata(),
             'gateway_ids' => $plan->gateway_ids ?? [],
             'is_active' => (bool) $plan->is_active,
             'is_public' => (bool) $plan->is_public,
@@ -188,5 +191,39 @@ class PlansController extends Controller
             ->get(['code', 'name'])
             ->map(fn ($c) => ['code' => $c->code, 'name' => $c->name])
             ->all();
+    }
+
+    /**
+     * Catalog grouped by category for the admin plan-builder UI. Each item
+     * carries its type (boolean | quota) so the React side renders the
+     * right row (checkbox vs checkbox+number+unlimited). Preserves the
+     * declaration order of config/billing.features within each category.
+     *
+     * @return array<int, array{category: string, items: array<int, array{slug: string, name: string, description: ?string, type: string, unit: ?string, unlimited_label: ?string}>}>
+     */
+    protected function featureCatalog(): array
+    {
+        $catalog = (array) config('billing.features', []);
+        $grouped = [];
+
+        foreach ($catalog as $slug => $meta) {
+            $category = (string) ($meta['category'] ?? 'Other');
+            $grouped[$category] ??= [];
+            $grouped[$category][] = [
+                'slug' => $slug,
+                'name' => (string) ($meta['name'] ?? $slug),
+                'description' => $meta['description'] ?? null,
+                'type' => (string) ($meta['type'] ?? 'boolean'),
+                'unit' => $meta['unit'] ?? null,
+                'unlimited_label' => $meta['unlimited_label'] ?? null,
+            ];
+        }
+
+        $out = [];
+        foreach ($grouped as $category => $items) {
+            $out[] = ['category' => $category, 'items' => $items];
+        }
+
+        return $out;
     }
 }

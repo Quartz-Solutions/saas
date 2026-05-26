@@ -24,7 +24,12 @@ class PricingController extends Controller
                 'price_cents' => (int) $p->price_cents,
                 'currency' => $p->currency,
                 'interval' => $p->billing_period,
-                'features' => (array) $p->features,
+                // Display labels resolved from config('billing.features') —
+                // unknown slugs are dropped by featuresWithMetadata().
+                'features' => array_map(
+                    fn (array $f) => $f['name'],
+                    $p->featuresWithMetadata(),
+                ),
                 'cta' => (int) $p->price_cents === 0
                     ? 'Start free'
                     : ($p->trial_days > 0 ? "Start {$p->trial_days}-day trial" : 'Choose plan'),

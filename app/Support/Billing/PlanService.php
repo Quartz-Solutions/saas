@@ -47,7 +47,7 @@ class PlanService
                 'billing_period' => (string) ($attributes['billing_period'] ?? 'month'),
                 'billing_interval' => max(1, (int) ($attributes['billing_interval'] ?? 1)),
                 'trial_days' => max(0, (int) ($attributes['trial_days'] ?? 0)),
-                'features' => $attributes['features'] ?? [],
+                'features' => $this->sanitizeFeatures((array) ($attributes['features'] ?? [])),
                 'is_active' => (bool) ($attributes['is_active'] ?? true),
                 'is_public' => (bool) ($attributes['is_public'] ?? true),
                 'sort_order' => (int) ($attributes['sort_order'] ?? 0),
@@ -107,6 +107,62 @@ class PlanService
             }
             // PayPal + regional gateways implement the same method in Phase 3.2+.
         }
+    }
+
+    /**
+     * Defensive filter for the features map. Drops unknown slugs and coerces
+     * values to the type declared in the catalog:
+     *   - boolean: keeps `true` only; anything else is dropped
+     *   - quota:   keeps non-negative ints + the -1 unlimited sentinel
+     *
+     * FormRequests already enforce this for admin-driven saves, but seeders
+     * and factories can call save() directly, so we re-check here.
+     *
+     * @param  array<string, mixed>|array<int, mixed>  $features
+     * @return array<string, bool|int>
+     */
+    protected function sanitizeFeatures(array $features): array
+    {
+        $catalog = (array) config('billing.features', []);
+        $out = [];
+
+        foreach ($features as $slug => $value) {
+            if (! is_string($slug) || ! array_key_exists($slug, $catalog)) {
+                continue;
+            }
+
+            $type = (string) ($catalog[$slug]['type'] ?? 'boolean');
+
+            if ($type === 'quota') {
+                if ($value === true || $value === Plan::UNLIMITED) {
+                    $out[$slug] = Plan::UNLIMITED;
+
+                    continue;
+                }
+                if (is_numeric($value)) {
+                    $int = (int) $value;
+                    if ($int < 0 && $int !== Plan::UNLIMITED) {
+                        continue;
+                    }
+                    if ($int === 0) {
+                        // Explicit zero quota → treat as "not included" + drop.
+                        continue;
+                    }
+                    $out[$slug] = $int;
+                }
+                // null / false / strings other than numeric → drop.
+
+                continue;
+            }
+
+            // Boolean feature.
+            if ($value === true || $value === 1 || $value === '1' || $value === 'true') {
+                $out[$slug] = true;
+            }
+            // false / 0 / unset → drop.
+        }
+
+        return $out;
     }
 
     protected function resolveSlug(Plan $plan, array $attributes): string

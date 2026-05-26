@@ -64,7 +64,7 @@ class PlansControllerTest extends TestCase
                 'billing_period' => 'month',
                 'billing_interval' => 1,
                 'trial_days' => 7,
-                'features' => ['1 project', 'Community support'],
+                'features' => ['community_support' => true, 'projects' => 1],
                 'is_active' => true,
                 'is_public' => true,
                 'sort_order' => 5,
@@ -118,7 +118,7 @@ class PlansControllerTest extends TestCase
                 'billing_period' => 'month',
                 'billing_interval' => 1,
                 'trial_days' => 14,
-                'features' => ['New feature'],
+                'features' => ['api_access' => true],
                 'is_active' => true,
                 'is_public' => true,
                 'sort_order' => 20,
@@ -265,5 +265,84 @@ class PlansControllerTest extends TestCase
                 'plan' => 'ghost-plan',
             ])
             ->assertSessionHasErrors('plan');
+    }
+
+    public function test_unknown_feature_slug_is_rejected(): void
+    {
+        $admin = $this->makeSuperAdmin();
+        $this->seed(CurrencySeeder::class);
+
+        $this->actingAs($admin)
+            ->from('/admin/plans/create')
+            ->post('/admin/plans', [
+                'name' => 'Bogus',
+                'slug' => 'bogus',
+                'price_cents' => 100,
+                'currency' => 'USD',
+                'billing_period' => 'month',
+                'billing_interval' => 1,
+                'trial_days' => 0,
+                'features' => ['api_access' => true, 'not_a_real_slug' => true],
+                'is_active' => true,
+                'is_public' => true,
+                'sort_order' => 0,
+            ])
+            ->assertRedirect('/admin/plans/create')
+            ->assertSessionHasErrors('features');
+    }
+
+    public function test_quota_feature_with_wrong_value_type_is_rejected(): void
+    {
+        $admin = $this->makeSuperAdmin();
+        $this->seed(CurrencySeeder::class);
+
+        $this->actingAs($admin)
+            ->from('/admin/plans/create')
+            ->post('/admin/plans', [
+                'name' => 'Bad quota',
+                'slug' => 'bad-quota',
+                'price_cents' => 100,
+                'currency' => 'USD',
+                'billing_period' => 'month',
+                'billing_interval' => 1,
+                'trial_days' => 0,
+                // team_seats is a quota; "lots" is not numeric.
+                'features' => ['team_seats' => 'lots'],
+                'is_active' => true,
+                'is_public' => true,
+                'sort_order' => 0,
+            ])
+            ->assertRedirect('/admin/plans/create')
+            ->assertSessionHasErrors('features');
+    }
+
+    public function test_feature_catalog_is_passed_to_create_and_edit_pages(): void
+    {
+        $admin = $this->makeSuperAdmin();
+        $this->seed(CurrencySeeder::class);
+
+        $this->actingAs($admin)
+            ->get('/admin/plans/create')
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->component('admin/plans/edit')
+                ->has('featureCatalog')
+                ->where('featureCatalog.0.category', fn ($c) => is_string($c) && $c !== '')
+            );
+    }
+
+    public function test_plan_serializes_features_with_resolved_metadata(): void
+    {
+        $admin = $this->makeSuperAdmin();
+        $this->seed(PlansSeeder::class);
+
+        $this->actingAs($admin)
+            ->get('/admin/plans')
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                // Free plan ships with 5 features (community_support, basic_analytics,
+                // projects=1, team_seats=3, storage_gb=1).
+                ->has('plans.data.0.features_resolved', 5)
+            );
     }
 }

@@ -45,7 +45,10 @@ class BillingController extends Controller
                 'price_cents' => (int) $plan->price_cents,
                 'currency' => $plan->currency,
                 'interval' => $plan->billing_period,
-                'features' => (array) $plan->features,
+                'features' => array_map(
+                    fn (array $f) => $f['name'],
+                    $plan->featuresWithMetadata(),
+                ),
                 'cta' => (int) $plan->price_cents === 0
                     ? 'Start free'
                     : ($plan->trial_days > 0 ? "Start {$plan->trial_days}-day trial" : 'Choose plan'),
