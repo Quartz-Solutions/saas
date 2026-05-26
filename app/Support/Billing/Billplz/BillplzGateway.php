@@ -8,6 +8,7 @@ use App\Support\Billing\PaymentGateway;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
+use InvalidArgumentException;
 use RuntimeException;
 
 /**
@@ -69,9 +70,73 @@ class BillplzGateway implements PaymentGateway
     // PaymentGateway — stubs (Phase 3.4)
     // ------------------------------------------------------------------
 
+    // SANDBOX VERIFICATION REQUIRED — built from Billplz docs, untested
     public function charge(int $amountCents, string $currency, array $context = []): Payment
     {
-        throw new RuntimeException('Billplz: charge/refund flow not yet wired — Phase 3.4. Implement via /api/v3/bills (creates a bill under collection_id, returns bill URL). Auto-FPX direct mode: append ?auto_submit=true + reference_1_label=Bank+Code + reference_1=<FPX bank code>. Docs: https://www.billplz.com/api#introduction');
+        if (strtoupper($currency) !== 'MYR') {
+            throw new InvalidArgumentException("Billplz only supports MYR; got [{$currency}].");
+        }
+
+        $customer = (array) ($context['customer'] ?? []);
+
+        $payload = [
+            'collection_id' => (string) config('billing.gateways.billplz.collection_id'),
+            'email' => (string) ($customer['email'] ?? 'na@example.com'),
+            'name' => (string) ($customer['name'] ?? 'NA'),
+            'amount' => $amountCents,
+            'callback_url' => (string) ($context['callback_url'] ?? ''),
+            'description' => (string) ($context['description'] ?? 'Subscription'),
+            'redirect_url' => (string) ($context['return_url'] ?? ''),
+            'reference_1_label' => $context['idempotency_key_label'] ?? null,
+            'reference_1' => $context['idempotency_key'] ?? null,
+        ];
+
+        $response = $this->http()->post('v3/bills', $payload);
+
+        if (! $response->successful()) {
+            throw new RuntimeException('Billplz v3/bills failed: '.$response->status().' '.$response->body());
+        }
+
+        $body = (array) $response->json();
+        $billId = (string) ($body['id'] ?? '');
+        $redirectUrl = (string) ($body['url'] ?? '');
+
+        if ($billId === '') {
+            throw new RuntimeException('Billplz v3/bills returned no id: '.$response->body());
+        }
+
+        $attrs = [
+            'gateway' => $this->id(),
+            'gateway_payment_id' => $billId,
+            'status' => 'pending',
+            'amount_cents' => $amountCents,
+            'currency' => 'MYR',
+            'metadata' => array_merge(
+                (array) ($context['metadata'] ?? []),
+                ['redirect_url' => $redirectUrl, 'billplz' => $body],
+            ),
+        ];
+
+        if (isset($context['idempotency_key'])) {
+            $attrs['idempotency_key'] = (string) $context['idempotency_key'];
+        }
+
+        if (isset($context['tenant_id'])) {
+            $attrs['tenant_id'] = $context['tenant_id'];
+        }
+
+        if (isset($context['invoice_id'])) {
+            $attrs['invoice_id'] = $context['invoice_id'];
+        }
+
+        if (isset($context['payment_method_id'])) {
+            $attrs['payment_method_id'] = $context['payment_method_id'];
+        }
+
+        $payment = new Payment;
+        $payment->forceFill($attrs)->save();
+
+        return $payment->fresh();
     }
 
     public function authorize(int $amountCents, string $currency, array $context = []): Payment
@@ -86,7 +151,7 @@ class BillplzGateway implements PaymentGateway
 
     public function refund(Payment $payment, ?int $amountCents = null): Payment
     {
-        throw new RuntimeException('Billplz: charge/refund flow not yet wired — Phase 3.4. Implement via /api/v3/bills (creates a bill under collection_id, returns bill URL). Auto-FPX direct mode: append ?auto_submit=true + reference_1_label=Bank+Code + reference_1=<FPX bank code>. Docs: https://www.billplz.com/api#introduction');
+        throw new RuntimeException('Billplz: refunds processed via Billplz merchant dashboard — no public API endpoint for refunds in current docs.');
     }
 
     public function void(Payment $payment): Payment

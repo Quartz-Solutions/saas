@@ -11,7 +11,9 @@ use App\Support\Billing\PaymentGateway;
 use App\Support\Billing\SubscriptionGateway;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
 use RuntimeException;
 
 /**
@@ -67,9 +69,95 @@ class ApsGateway implements PaymentGateway, SubscriptionGateway
     // PaymentGateway — stubs
     // ------------------------------------------------------------------
 
+    /**
+     * Build an APS Hosted Checkout (Redirection) form bundle.
+     *
+     * SANDBOX VERIFICATION REQUIRED — built from APS docs, untested.
+     *
+     * APS hosted checkout is NOT a JSON API — there is no server-to-server
+     * call here. We construct a signed form parameter bag; the front-end
+     * renders a self-submitting <form method="POST" action={form_action}>
+     * containing every key in metadata.form_params (signature included).
+     * The customer's browser POSTs to APS, completes payment, and APS
+     * redirects back to context.return_url with a signed response that the
+     * webhook / return handler will verify via verifyResponse().
+     *
+     * $context keys honoured:
+     *   - tenant_id (required) — bound to the new Payment row
+     *   - invoice_id (optional)
+     *   - idempotency_key (optional) — also used as merchant_reference
+     *   - language (optional, 'en'|'ar', default 'en')
+     *   - return_url (optional) — APS redirects the customer here
+     *   - customer.email (optional) — defaults to na@example.com
+     *
+     * @param  array<string, mixed>  $context
+     *
+     * @see https://paymentservices.amazon.com/docs/getting-started
+     */
     public function charge(int $amountCents, string $currency, array $context = []): Payment
     {
-        throw new RuntimeException('APS: charge/refund flow not yet wired — Phase 3.3. Implement via Hosted Checkout (form POST to baseUrl + /FortAPI/paymentPage). Recurring uses RECURRING command + saved token_name. Docs: https://paymentservices.amazon.com/docs/getting-started');
+        // SANDBOX VERIFICATION REQUIRED — built from APS docs, untested.
+        $merchantReference = (string) ($context['idempotency_key'] ?? Str::uuid());
+
+        $customer = (array) ($context['customer'] ?? []);
+
+        $params = [
+            'service_command' => 'PURCHASE',
+            'access_code' => (string) config('billing.gateways.aps.access_code'),
+            'merchant_identifier' => (string) config('billing.gateways.aps.merchant_identifier'),
+            'merchant_reference' => $merchantReference,
+            'amount' => (string) $this->toMinorUnits($amountCents, $currency),
+            'currency' => strtoupper($currency),
+            'language' => (string) ($context['language'] ?? 'en'),
+            'customer_email' => (string) ($customer['email'] ?? 'na@example.com'),
+            'return_url' => (string) ($context['return_url'] ?? ''),
+        ];
+
+        $params = $this->withSignature($params);
+
+        $formAction = $this->baseUrl().'/FortAPI/paymentPage';
+
+        $attrs = [
+            'gateway' => 'aps',
+            'gateway_payment_id' => $merchantReference,
+            'status' => 'pending',
+            'amount_cents' => $amountCents,
+            'currency' => strtoupper($currency),
+            'metadata' => [
+                'form_action' => $formAction,
+                'form_params' => $params,
+            ],
+        ];
+
+        if (isset($context['idempotency_key'])) {
+            $attrs['idempotency_key'] = (string) $context['idempotency_key'];
+        }
+        if (isset($context['tenant_id'])) {
+            $attrs['tenant_id'] = $context['tenant_id'];
+        }
+        if (isset($context['invoice_id'])) {
+            $attrs['invoice_id'] = $context['invoice_id'];
+        }
+
+        $existing = Payment::query()
+            ->where('gateway', 'aps')
+            ->where('gateway_payment_id', $merchantReference)
+            ->first();
+
+        if ($existing !== null) {
+            $existing->forceFill($attrs)->save();
+
+            return $existing->fresh();
+        }
+
+        if (! isset($attrs['tenant_id'])) {
+            throw new RuntimeException('ApsGateway::charge: tenant_id is required for new payments. Pass via $context.');
+        }
+
+        $payment = new Payment;
+        $payment->forceFill($attrs)->save();
+
+        return $payment->fresh();
     }
 
     public function authorize(int $amountCents, string $currency, array $context = []): Payment
@@ -82,9 +170,70 @@ class ApsGateway implements PaymentGateway, SubscriptionGateway
         throw new RuntimeException('APS: charge/refund flow not yet wired — Phase 3.3. Implement via Hosted Checkout (form POST to baseUrl + /FortAPI/paymentPage). Recurring uses RECURRING command + saved token_name. Docs: https://paymentservices.amazon.com/docs/getting-started');
     }
 
+    /**
+     * Refund an APS purchase (full or partial).
+     *
+     * SANDBOX VERIFICATION REQUIRED — built from APS docs, untested.
+     *
+     * Unlike charge(), refunds ARE server-to-server JSON. We POST a signed
+     * payload to {baseUrl}/FortAPI/paymentApi with command=REFUND. The
+     * webhook handler is responsible for populating metadata.fort_id off
+     * the original purchase notification — without it APS cannot locate
+     * the transaction.
+     */
     public function refund(Payment $payment, ?int $amountCents = null): Payment
     {
-        throw new RuntimeException('APS: charge/refund flow not yet wired — Phase 3.3. Implement via Hosted Checkout (form POST to baseUrl + /FortAPI/paymentPage). Recurring uses RECURRING command + saved token_name. Docs: https://paymentservices.amazon.com/docs/getting-started');
+        // SANDBOX VERIFICATION REQUIRED — built from APS docs, untested.
+        $metadata = (array) ($payment->metadata ?? []);
+        $fortId = (string) ($metadata['fort_id'] ?? '');
+
+        if ($fortId === '') {
+            throw new RuntimeException('ApsGateway::refund: no fort_id on Payment row. Webhook must populate metadata.fort_id before refund.');
+        }
+
+        $refundAmount = $amountCents ?? (int) $payment->amount_cents;
+        $currency = strtoupper((string) $payment->currency);
+
+        $params = [
+            'command' => 'REFUND',
+            'access_code' => (string) config('billing.gateways.aps.access_code'),
+            'merchant_identifier' => (string) config('billing.gateways.aps.merchant_identifier'),
+            'merchant_reference' => (string) $payment->gateway_payment_id,
+            'fort_id' => $fortId,
+            'amount' => (string) $this->toMinorUnits($refundAmount, $currency),
+            'currency' => $currency,
+            'language' => (string) ($metadata['language'] ?? 'en'),
+        ];
+
+        $params = $this->withSignature($params);
+
+        $response = $this->http()->post('/FortAPI/paymentApi', $params);
+
+        if (! $response->successful()) {
+            throw new RuntimeException('APS refund HTTP failure: '.$response->status().' '.$response->body());
+        }
+
+        $body = (array) $response->json();
+        $responseCode = (string) ($body['response_code'] ?? '');
+        // APS success codes for REFUND are in the 06xxx family (e.g. 06000).
+        $isSuccess = str_starts_with($responseCode, '06') && (str_ends_with($responseCode, '000') || str_ends_with($responseCode, '064'));
+
+        return DB::transaction(function () use ($payment, $refundAmount, $body, $isSuccess) {
+            $newRefunded = (int) $payment->refunded_cents + ($isSuccess ? $refundAmount : 0);
+
+            $payment->forceFill([
+                'refunded_cents' => $newRefunded,
+                'status' => $isSuccess
+                    ? ($newRefunded >= (int) $payment->amount_cents ? 'refunded' : 'partially_refunded')
+                    : $payment->status,
+                'refunded_at' => $isSuccess ? now() : $payment->refunded_at,
+                'metadata' => array_merge((array) ($payment->metadata ?? []), [
+                    'refund_response' => $body,
+                ]),
+            ])->save();
+
+            return $payment->fresh();
+        });
     }
 
     public function void(Payment $payment): Payment

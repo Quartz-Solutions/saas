@@ -7,7 +7,9 @@ use App\Models\WebhookEvent;
 use App\Support\Billing\PaymentGateway;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
 use RuntimeException;
 
 /**
@@ -215,34 +217,189 @@ class Ipay88Gateway implements PaymentGateway
     // PaymentGateway
     // ------------------------------------------------------------------
 
+    /**
+     * SANDBOX VERIFICATION REQUIRED — built from iPay88 docs (best-effort;
+     * official dev portal sometimes unreachable), untested.
+     *
+     * iPay88 has no JSON checkout API — the merchant generates a signed
+     * set of form fields and the customer browser POSTs them (commonly via
+     * a self-submitting form) to:
+     *
+     *   {baseUrl}/ePayment/WebService/PaymentAPI/Checkout
+     *
+     * Because no server call is made here, this method does NOT hit HTTP
+     * and cannot fail with a network error. It persists a `pending`
+     * Payment row keyed by RefNo and stashes the `form_action`,
+     * `form_method`, and `form_params` on `metadata` so the wrapping
+     * controller / Inertia page can render the redirect form. The final
+     * status arrives later via the BackendURL callback (see
+     * {@see self::handleWebhook()}).
+     *
+     * @param  array<string, mixed>  $context
+     */
     public function charge(int $amountCents, string $currency, array $context = []): Payment
     {
-        throw new RuntimeException('iPay88: charge/refund flow not yet wired — Phase 3.4. Implement as form POST to /ePayment/WebService/PaymentAPI/Checkout with MerchantCode + RefNo + Amount + Currency + Signature + SignatureType + ResponseURL + BackendURL. Country/environment selects host. Refunds via Requery API. Docs: https://www.ipay88.com/developer/');
+        // SANDBOX VERIFICATION REQUIRED — built from iPay88 docs (best-effort;
+        // official dev portal sometimes unreachable), untested.
+        $refNo = (string) ($context['idempotency_key'] ?? Str::uuid());
+        $amountDecimal = number_format($amountCents / 100, 2, '.', '');
+        $currencyUpper = strtoupper($currency);
+
+        $signature = $this->signRequest($refNo, $amountDecimal, $currencyUpper);
+
+        $params = [
+            'MerchantCode' => $this->merchantCode(),
+            // Optional iPay88 PaymentId restricts the customer to a specific
+            // payment method (e.g. "2" = Maybank2u). Empty = show all methods.
+            'PaymentId' => (string) ($context['payment_method_id'] ?? ''),
+            'RefNo' => $refNo,
+            'Amount' => $amountDecimal,
+            'Currency' => $currencyUpper,
+            'ProdDesc' => (string) ($context['description'] ?? 'Subscription'),
+            'UserName' => (string) ($context['customer']['name'] ?? 'NA'),
+            'UserEmail' => (string) ($context['customer']['email'] ?? 'na@example.com'),
+            'UserContact' => (string) ($context['customer']['phone'] ?? '0000000000'),
+            'Signature' => $signature,
+            'SignatureType' => $this->signatureType(),
+            'ResponseURL' => (string) ($context['return_url'] ?? ''),
+            'BackendURL' => (string) ($context['callback_url'] ?? ''),
+        ];
+
+        $formAction = $this->baseUrl().'/ePayment/WebService/PaymentAPI/Checkout';
+
+        if (! isset($context['tenant_id'])) {
+            throw new RuntimeException('iPay88 charge: tenant_id is required in $context for new payments.');
+        }
+
+        $attrs = [
+            'tenant_id' => $context['tenant_id'],
+            'gateway' => 'ipay88',
+            'gateway_payment_id' => $refNo,
+            'status' => 'pending',
+            'amount_cents' => $amountCents,
+            'refunded_cents' => 0,
+            'currency' => $currencyUpper,
+            'idempotency_key' => $refNo,
+            'metadata' => [
+                'form_action' => $formAction,
+                'form_method' => 'POST',
+                'form_params' => $params,
+                'signature_type' => $this->signatureType(),
+                'country' => $this->country(),
+                'environment' => $this->environment(),
+            ],
+        ];
+
+        if (isset($context['invoice_id'])) {
+            $attrs['invoice_id'] = $context['invoice_id'];
+        }
+
+        return DB::transaction(function () use ($attrs) {
+            $payment = new Payment;
+            $payment->forceFill($attrs)->save();
+
+            return $payment->fresh();
+        });
     }
 
     public function authorize(int $amountCents, string $currency, array $context = []): Payment
     {
-        throw new RuntimeException('iPay88: charge/refund flow not yet wired — Phase 3.4. Implement as form POST to /ePayment/WebService/PaymentAPI/Checkout with MerchantCode + RefNo + Amount + Currency + Signature + SignatureType + ResponseURL + BackendURL. Country/environment selects host. Refunds via Requery API. Docs: https://www.ipay88.com/developer/');
+        throw new RuntimeException('iPay88: authorize/capture/void/status not yet wired — Phase 3.4. iPay88 hosted checkout is single-step; preauth-style flows live on the country-specific MOTO/Auto-Debit APIs. Docs: https://www.ipay88.com/developer/');
     }
 
     public function capture(Payment $payment, ?int $amountCents = null): Payment
     {
-        throw new RuntimeException('iPay88: charge/refund flow not yet wired — Phase 3.4. Implement as form POST to /ePayment/WebService/PaymentAPI/Checkout with MerchantCode + RefNo + Amount + Currency + Signature + SignatureType + ResponseURL + BackendURL. Country/environment selects host. Refunds via Requery API. Docs: https://www.ipay88.com/developer/');
+        throw new RuntimeException('iPay88: authorize/capture/void/status not yet wired — Phase 3.4. iPay88 hosted checkout is single-step; preauth-style flows live on the country-specific MOTO/Auto-Debit APIs. Docs: https://www.ipay88.com/developer/');
     }
 
+    /**
+     * SANDBOX VERIFICATION REQUIRED — built from iPay88 docs (best-effort;
+     * official dev portal sometimes unreachable), untested.
+     *
+     * TODO: refund payloads + signing rules diverge per country (MY uses
+     * RefundAPI.asmx/PaymentRefund with a SHA-256 signature over
+     * MerchantKey + MerchantCode + RefNo + RefundAmount; SG/PH/ID/TH/VN
+     * each have their own variant). The "PaymentId" sent on refund is the
+     * iPay88 transaction Token returned with the original callback, NOT
+     * the checkout-method PaymentId. This block is shaped to the MY
+     * variant — verify against the country PDF before going live.
+     *
+     * Endpoint: {baseUrl}/ePayment/WebService/Refund/RefundAPI.asmx/PaymentRefund
+     * Body (form-encoded):
+     *   MerchantCode, RefNo, Amount(2dp), PaymentId(=Token from callback),
+     *   refundType ("F" full / "P" partial), refundReason, Signature.
+     */
     public function refund(Payment $payment, ?int $amountCents = null): Payment
     {
-        throw new RuntimeException('iPay88: charge/refund flow not yet wired — Phase 3.4. Implement as form POST to /ePayment/WebService/PaymentAPI/Checkout with MerchantCode + RefNo + Amount + Currency + Signature + SignatureType + ResponseURL + BackendURL. Country/environment selects host. Refunds via Requery API. Docs: https://www.ipay88.com/developer/');
+        // SANDBOX VERIFICATION REQUIRED — built from iPay88 docs (best-effort;
+        // official dev portal sometimes unreachable), untested.
+        $refundCents = $amountCents ?? ((int) $payment->amount_cents - (int) $payment->refunded_cents);
+
+        if ($refundCents <= 0) {
+            throw new RuntimeException('iPay88 refund: refund amount must be positive.');
+        }
+
+        $refundAmount = number_format($refundCents / 100, 2, '.', '');
+        $refNo = (string) $payment->gateway_payment_id;
+        $metadata = (array) ($payment->metadata ?? []);
+        // The original callback delivered a Token-like ID under PaymentId /
+        // TransId — stashed on metadata by the webhook handler. Without it
+        // the refund cannot reference the captured transaction.
+        $paymentToken = (string) ($metadata['transaction_id']
+            ?? $metadata['TransId']
+            ?? $metadata['PaymentId']
+            ?? '');
+
+        if ($paymentToken === '') {
+            throw new RuntimeException('iPay88 refund: missing transaction token on payment.metadata — required to reference the captured transaction.');
+        }
+
+        $isFull = $refundCents >= (int) $payment->amount_cents - (int) $payment->refunded_cents;
+        $refundType = $isFull ? 'F' : 'P';
+        $reason = (string) ($metadata['refund_reason'] ?? 'Customer refund');
+
+        $signature = $this->signRequest(
+            $refNo,
+            $refundAmount,
+            strtoupper((string) $payment->currency),
+        );
+
+        $body = [
+            'MerchantCode' => $this->merchantCode(),
+            'RefNo' => $refNo,
+            'Amount' => $refundAmount,
+            'PaymentId' => $paymentToken,
+            'refundType' => $refundType,
+            'refundReason' => $reason,
+            'Signature' => $signature,
+            'SignatureType' => $this->signatureType(),
+        ];
+
+        $this->http()
+            ->asForm()
+            ->post('/ePayment/WebService/Refund/RefundAPI.asmx/PaymentRefund', $body)
+            ->throw();
+
+        return DB::transaction(function () use ($payment, $refundCents) {
+            $newRefunded = (int) $payment->refunded_cents + $refundCents;
+            $payment->forceFill([
+                'refunded_cents' => $newRefunded,
+                'status' => $newRefunded >= (int) $payment->amount_cents ? 'refunded' : 'partially_refunded',
+                'refunded_at' => now(),
+            ])->save();
+
+            return $payment->fresh();
+        });
     }
 
     public function void(Payment $payment): Payment
     {
-        throw new RuntimeException('iPay88: charge/refund flow not yet wired — Phase 3.4. Implement as form POST to /ePayment/WebService/PaymentAPI/Checkout with MerchantCode + RefNo + Amount + Currency + Signature + SignatureType + ResponseURL + BackendURL. Country/environment selects host. Refunds via Requery API. Docs: https://www.ipay88.com/developer/');
+        throw new RuntimeException('iPay88: authorize/capture/void/status not yet wired — Phase 3.4. iPay88 hosted checkout is single-step; preauth-style flows live on the country-specific MOTO/Auto-Debit APIs. Docs: https://www.ipay88.com/developer/');
     }
 
     public function status(Payment $payment): Payment
     {
-        throw new RuntimeException('iPay88: charge/refund flow not yet wired — Phase 3.4. Implement as form POST to /ePayment/WebService/PaymentAPI/Checkout with MerchantCode + RefNo + Amount + Currency + Signature + SignatureType + ResponseURL + BackendURL. Country/environment selects host. Refunds via Requery API. Docs: https://www.ipay88.com/developer/');
+        throw new RuntimeException('iPay88: authorize/capture/void/status not yet wired — Phase 3.4. Use the country-specific Requery API ({baseUrl}/epayment/enquiry.asmx) — body MerchantCode + RefNo + Amount + signature; returns plain text status. Docs: https://www.ipay88.com/developer/');
     }
 
     /**

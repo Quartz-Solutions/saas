@@ -11,7 +11,9 @@ use App\Support\Billing\PaymentGateway;
 use App\Support\Billing\SubscriptionGateway;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
 use RuntimeException;
 
 /**
@@ -188,9 +190,92 @@ class TelrGateway implements PaymentGateway, SubscriptionGateway
     // PaymentGateway
     // ------------------------------------------------------------------
 
+    /**
+     * SANDBOX VERIFICATION REQUIRED — built from Telr docs, untested.
+     *
+     * Create Order — POSTs `method=create` to /gateway/order.json with Basic
+     * auth (store_id : auth_key). Telr returns `order.ref` (transaction ref)
+     * and `order.url` (hosted payment page) — the caller redirects the
+     * customer to `metadata.redirect_url`. Final settlement arrives via IPN
+     * (tran_check verified in handleWebhook).
+     *
+     * @param  array<string, mixed>  $context
+     */
     public function charge(int $amountCents, string $currency, array $context = []): Payment
     {
-        throw new RuntimeException('Telr: charge/refund flow not yet wired — Phase 3.3. Implement via REST Create Order /gateway/order.json (returns _links.auth for redirect). Statuses: PENDING/AUTHORISED/PAID/CANCELLED/DECLINED. Docs: https://docs.telr.com/reference/introduction');
+        // SANDBOX VERIFICATION REQUIRED — built from Telr docs, untested.
+        $storeId = (int) config('billing.gateways.telr.store_id');
+        $authKey = (string) config('billing.gateways.telr.auth_key');
+        $testMode = (int) config('billing.gateways.telr.test_mode');
+
+        $cartId = (string) ($context['idempotency_key'] ?? Str::uuid());
+        $amount = number_format($amountCents / 100, 2, '.', '');
+        $upperCurrency = strtoupper($currency);
+        $description = (string) ($context['description'] ?? 'Subscription');
+        $returnUrl = (string) ($context['return_url'] ?? '');
+
+        $body = [
+            'method' => 'create',
+            'store' => $storeId,
+            'authkey' => $authKey,
+            'framed' => 0,
+            'order' => [
+                'cartid' => $cartId,
+                'test' => $testMode,
+                'amount' => $amount,
+                'currency' => $upperCurrency,
+                'description' => $description,
+            ],
+            'return' => [
+                'authorised' => $returnUrl,
+                'declined' => $returnUrl,
+                'cancelled' => $returnUrl,
+            ],
+        ];
+
+        $response = $this->http()
+            ->post(self::BASE_URL, $body)
+            ->throw()
+            ->json();
+
+        $orderRef = (string) ($response['order']['ref'] ?? '');
+        $redirectUrl = (string) ($response['order']['url'] ?? '');
+
+        if ($orderRef === '' || $redirectUrl === '') {
+            throw new RuntimeException('Telr charge: missing order.ref or order.url in response — '.json_encode($response));
+        }
+
+        if (! isset($context['tenant_id'])) {
+            throw new RuntimeException('Telr charge: tenant_id is required in $context for new payments.');
+        }
+
+        $attrs = [
+            'tenant_id' => $context['tenant_id'],
+            'gateway' => 'telr',
+            'gateway_payment_id' => $orderRef,
+            'status' => 'pending',
+            'amount_cents' => $amountCents,
+            'refunded_cents' => 0,
+            'currency' => $upperCurrency,
+            'idempotency_key' => $cartId,
+            'metadata' => [
+                'redirect_url' => $redirectUrl,
+                'cart_id' => $cartId,
+                'test_mode' => $testMode,
+                'order' => $response['order'] ?? null,
+            ],
+        ];
+
+        if (isset($context['invoice_id'])) {
+            $attrs['invoice_id'] = $context['invoice_id'];
+        }
+
+        return DB::transaction(function () use ($attrs) {
+            $payment = new Payment;
+            $payment->forceFill($attrs)->save();
+
+            return $payment->fresh();
+        });
     }
 
     public function authorize(int $amountCents, string $currency, array $context = []): Payment
@@ -203,9 +288,50 @@ class TelrGateway implements PaymentGateway, SubscriptionGateway
         throw new RuntimeException('Telr: charge/refund flow not yet wired — Phase 3.3. Implement via REST Create Order /gateway/order.json (returns _links.auth for redirect). Statuses: PENDING/AUTHORISED/PAID/CANCELLED/DECLINED. Docs: https://docs.telr.com/reference/introduction');
     }
 
+    /**
+     * SANDBOX VERIFICATION REQUIRED — built from Telr docs, untested.
+     *
+     * POSTs `method=refund` to /gateway/order.json with the original
+     * `order.ref` (gateway_payment_id), refund amount and currency. Updates
+     * the Payment row's refunded_cents + status (partially_refunded /
+     * refunded).
+     */
     public function refund(Payment $payment, ?int $amountCents = null): Payment
     {
-        throw new RuntimeException('Telr: charge/refund flow not yet wired — Phase 3.3. Implement via REST Create Order /gateway/order.json (returns _links.auth for redirect). Statuses: PENDING/AUTHORISED/PAID/CANCELLED/DECLINED. Docs: https://docs.telr.com/reference/introduction');
+        // SANDBOX VERIFICATION REQUIRED — built from Telr docs, untested.
+        $storeId = (int) config('billing.gateways.telr.store_id');
+        $authKey = (string) config('billing.gateways.telr.auth_key');
+
+        $refundCents = $amountCents ?? ((int) $payment->amount_cents - (int) $payment->refunded_cents);
+        $refundAmount = number_format($refundCents / 100, 2, '.', '');
+        $currency = strtoupper((string) $payment->currency);
+        $orderRef = (string) $payment->gateway_payment_id;
+
+        $body = [
+            'method' => 'refund',
+            'store' => $storeId,
+            'authkey' => $authKey,
+            'order' => [
+                'ref' => $orderRef,
+                'amount' => $refundAmount,
+                'currency' => $currency,
+            ],
+        ];
+
+        $this->http()
+            ->post(self::BASE_URL, $body)
+            ->throw();
+
+        return DB::transaction(function () use ($payment, $refundCents) {
+            $newRefunded = (int) $payment->refunded_cents + $refundCents;
+            $payment->forceFill([
+                'refunded_cents' => $newRefunded,
+                'status' => $newRefunded >= (int) $payment->amount_cents ? 'refunded' : 'partially_refunded',
+                'refunded_at' => now(),
+            ])->save();
+
+            return $payment->fresh();
+        });
     }
 
     public function void(Payment $payment): Payment

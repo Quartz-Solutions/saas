@@ -12,6 +12,7 @@ use App\Support\Billing\SubscriptionGateway;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
 use RuntimeException;
 
 /**
@@ -217,9 +218,81 @@ class HitPayGateway implements PaymentGateway, SubscriptionGateway
     // PaymentGateway
     // ------------------------------------------------------------------
 
+    /**
+     * Create a HitPay Payment Request and persist a pending Payment row.
+     *
+     * SANDBOX VERIFICATION REQUIRED — built from HitPay docs, untested.
+     *
+     * HitPay accepts an x-www-form-urlencoded body at POST /payment-requests
+     * and returns JSON with `id` + `url`. The hosted `url` is the customer-
+     * facing checkout page; the Payment row stores it on metadata so the
+     * caller can redirect the browser there.
+     *
+     * Important: HitPay expects DECIMAL amounts ("10.00"), NOT integer cents.
+     * Conversion happens here via {@see self::toDecimalString()}.
+     *
+     * The `reference_number` field doubles as our idempotency key — callers
+     * may pass `$context['idempotency_key']`, otherwise a fresh UUID is
+     * generated. The resulting Payment row's `idempotency_key` column
+     * mirrors that value so a repeat call from the BillingService layer
+     * surfaces the same upstream record.
+     *
+     * @param  array<string, mixed>  $context  Free-form bag. Recognised keys:
+     *                                         - tenant_id        — bound to the Payment row
+     *                                         - invoice_id       — bound to the Payment row
+     *                                         - idempotency_key  — also sent as reference_number
+     *                                         - customer.email   — buyer email (optional)
+     *                                         - customer.name    — buyer name (optional)
+     *                                         - description      — HitPay "purpose" line
+     *                                         - return_url       — browser redirect_url
+     *                                         - callback_url     — server webhook url
+     *
+     * Docs: https://docs.hitpayapp.com/apis/guide/online-payments
+     */
     public function charge(int $amountCents, string $currency, array $context = []): Payment
     {
-        throw new RuntimeException('HitPay: charge/refund flow not yet wired — Phase 3.4. Implement via POST /v1/payment-requests (amount as decimal string, not cents). FPX/DuitNow/PayNow/Atome/cards supported. Docs: https://docs.hitpayapp.com/introduction');
+        // SANDBOX VERIFICATION REQUIRED — built from HitPay docs, untested
+        $reference = (string) ($context['idempotency_key'] ?? Str::uuid());
+
+        $body = [
+            'amount' => $this->toDecimalString($amountCents),
+            'currency' => strtoupper($currency),
+            'reference_number' => $reference,
+            'email' => $context['customer']['email'] ?? null,
+            'name' => $context['customer']['name'] ?? null,
+            'purpose' => $context['description'] ?? 'Subscription',
+            'redirect_url' => $context['return_url'] ?? '',
+            'webhook' => $context['callback_url'] ?? '',
+            'send_email' => false,
+            'send_sms' => false,
+            'allow_repeated_payments' => false,
+        ];
+
+        $response = $this->http()
+            ->post('payment-requests', $body)
+            ->throw()
+            ->json();
+
+        $paymentRequestId = (string) ($response['id'] ?? '');
+        if ($paymentRequestId === '') {
+            throw new RuntimeException('HitPay: create-payment-request response missing id');
+        }
+
+        return Payment::create([
+            'tenant_id' => $context['tenant_id'] ?? null,
+            'invoice_id' => $context['invoice_id'] ?? null,
+            'gateway' => $this->id(),
+            'gateway_payment_id' => $paymentRequestId,
+            'status' => 'pending',
+            'amount_cents' => $amountCents,
+            'currency' => strtoupper($currency),
+            'idempotency_key' => $reference,
+            'metadata' => [
+                'redirect_url' => (string) ($response['url'] ?? ''),
+                'reference_number' => $reference,
+                'raw_response' => $response,
+            ],
+        ]);
     }
 
     public function authorize(int $amountCents, string $currency, array $context = []): Payment
@@ -232,9 +305,55 @@ class HitPayGateway implements PaymentGateway, SubscriptionGateway
         throw new RuntimeException('HitPay: charge/refund flow not yet wired — Phase 3.4. Implement via POST /v1/payment-requests (amount as decimal string, not cents). FPX/DuitNow/PayNow/Atome/cards supported. Docs: https://docs.hitpayapp.com/introduction');
     }
 
+    /**
+     * Refund a captured HitPay charge (full or partial).
+     *
+     * SANDBOX VERIFICATION REQUIRED — built from HitPay docs, untested.
+     *
+     * HitPay refunds attach to the underlying CHARGE id (not the
+     * payment-request id). The charge id is delivered on the webhook and
+     * SHOULD be persisted onto `Payment::metadata.charge_id` by the
+     * webhook handler. We fall back to `gateway_payment_id` if the caller
+     * never recorded a separate charge id.
+     *
+     * Endpoint: POST {baseUrl}/charges/{payment_id}/refunds
+     * Body:   amount (decimal string)
+     *
+     * Docs: https://docs.hitpayapp.com/apis/guide/online-payments
+     */
     public function refund(Payment $payment, ?int $amountCents = null): Payment
     {
-        throw new RuntimeException('HitPay: charge/refund flow not yet wired — Phase 3.4. Implement via POST /v1/payment-requests (amount as decimal string, not cents). FPX/DuitNow/PayNow/Atome/cards supported. Docs: https://docs.hitpayapp.com/introduction');
+        // SANDBOX VERIFICATION REQUIRED — built from HitPay docs, untested
+        $chargeId = (string) ($payment->metadata['charge_id'] ?? $payment->gateway_payment_id ?? '');
+        if ($chargeId === '') {
+            throw new RuntimeException('HitPay: cannot refund — missing charge id on Payment#'.$payment->id);
+        }
+
+        $alreadyRefunded = (int) ($payment->refunded_cents ?? 0);
+        $remaining = (int) $payment->amount_cents - $alreadyRefunded;
+        $refundCents = $amountCents ?? $remaining;
+
+        $body = [
+            'amount' => $this->toDecimalString($refundCents),
+        ];
+
+        $response = $this->http()
+            ->post('charges/'.$chargeId.'/refunds', $body)
+            ->throw()
+            ->json();
+
+        $newRefunded = $alreadyRefunded + $refundCents;
+
+        $payment->forceFill([
+            'refunded_cents' => $newRefunded,
+            'refunded_at' => now(),
+            'status' => $newRefunded >= (int) $payment->amount_cents ? 'refunded' : 'partially_refunded',
+            'metadata' => array_merge((array) ($payment->metadata ?? []), [
+                'last_refund_response' => $response,
+            ]),
+        ])->save();
+
+        return $payment->fresh();
     }
 
     public function void(Payment $payment): Payment
@@ -271,9 +390,89 @@ class HitPayGateway implements PaymentGateway, SubscriptionGateway
     // SubscriptionGateway
     // ------------------------------------------------------------------
 
+    /**
+     * Create a HitPay Recurring Billing subscription.
+     *
+     * SANDBOX VERIFICATION REQUIRED — built from HitPay docs, untested.
+     *
+     * HitPay's recurring engine is a two-step model: first a "plan" object
+     * must exist (created via /recurring-billing/plans, normally synced
+     * by the PlanService), then a subscription is opened against that
+     * plan via POST /recurring-billing.
+     *
+     * The plan id MUST be stored on `Plan::gateway_ids['hitpay']` ahead of
+     * this call (PlanService handles that). The tenant's billing email is
+     * resolved off the owner (mirrors the Stripe driver's
+     * {@see StripeGateway::ensureCustomer()} contract).
+     *
+     * Body fields (per docs):
+     *   - plan_id          — HitPay plan id
+     *   - customer_email   — buyer email
+     *   - start_date       — YYYY-MM-DD (today by default)
+     *   - redirect_url     — browser return after card setup
+     *
+     * Docs: https://docs.hitpayapp.com/apis/guide/recurring-billing
+     */
     public function createSubscription(Tenant $tenant, Plan $plan, array $context = []): Subscription
     {
-        throw new RuntimeException('HitPay: subscription flow not yet wired — Phase 3.4. Implement via /v1/recurring-billing/plans + /v1/recurring-billing (start_date + customer_email required). Docs: https://docs.hitpayapp.com/apis/guide/recurring-billing');
+        // SANDBOX VERIFICATION REQUIRED — built from HitPay docs, untested
+        $planId = (string) ($plan->gateway_ids['hitpay'] ?? '');
+        if ($planId === '') {
+            throw new RuntimeException('HitPay: Plan#'.$plan->id.' is missing gateway_ids.hitpay — sync the plan to HitPay first.');
+        }
+
+        $email = (string) ($context['customer_email'] ?? $tenant->owner?->email ?? '');
+        if ($email === '') {
+            throw new RuntimeException('HitPay: tenant has no billing email — cannot start subscription.');
+        }
+
+        $body = [
+            'plan_id' => $planId,
+            'customer_email' => $email,
+            'start_date' => (string) ($context['start_date'] ?? now()->toDateString()),
+            'redirect_url' => (string) ($context['return_url'] ?? ''),
+        ];
+
+        $response = $this->http()
+            ->post('recurring-billing', $body)
+            ->throw()
+            ->json();
+
+        $subscriptionId = (string) ($response['id'] ?? '');
+        if ($subscriptionId === '') {
+            throw new RuntimeException('HitPay: create-subscription response missing id');
+        }
+
+        $attrs = [
+            'tenant_id' => $tenant->id,
+            'plan_id' => $plan->id,
+            'gateway' => $this->id(),
+            'gateway_subscription_id' => $subscriptionId,
+            'status' => (string) ($response['status'] ?? 'incomplete'),
+            'currency' => strtoupper((string) $plan->currency),
+            'unit_amount_cents' => (int) $plan->price_cents,
+            'quantity' => 1,
+            'metadata' => [
+                'url' => (string) ($response['url'] ?? ''),
+                'raw_response' => $response,
+            ],
+        ];
+
+        $existing = Subscription::query()
+            ->where('gateway', $this->id())
+            ->where('gateway_subscription_id', $subscriptionId)
+            ->first();
+
+        if ($existing !== null) {
+            $existing->forceFill($attrs)->save();
+
+            return $existing->fresh();
+        }
+
+        $subscription = new Subscription;
+        $subscription->forceFill($attrs)->save();
+
+        return $subscription->fresh();
     }
 
     public function changePlan(Subscription $subscription, Plan $newPlan, array $context = []): Subscription

@@ -11,7 +11,9 @@ use App\Support\Billing\PaymentGateway;
 use App\Support\Billing\SubscriptionGateway;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
 use RuntimeException;
 use Throwable;
 
@@ -219,9 +221,79 @@ class MyFatoorahGateway implements PaymentGateway, SubscriptionGateway
     // PaymentGateway
     // ------------------------------------------------------------------
 
+    /**
+     * SANDBOX VERIFICATION REQUIRED — built from MyFatoorah docs, untested.
+     *
+     * POST /v2/SendPayment — creates an invoice and returns an InvoiceURL
+     * the customer is redirected to. NotificationOption=LNK skips MyFatoorah-
+     * driven SMS/email and just hands back the link so we can redirect.
+     *
+     * Amount is sent as a DECIMAL ($amountCents / 100) and the upstream
+     * `DisplayCurrencyIso` must be upper-case.
+     *
+     * @param  array<string, mixed>  $context
+     */
     public function charge(int $amountCents, string $currency, array $context = []): Payment
     {
-        throw new RuntimeException('MyFatoorah: charge/refund flow not yet wired — Phase 3.3. Implement via /v2/ExecutePayment (hosted or embedded) + /v2/MakeRefund. KNET (KW), Benefit (BH), Mada (SA), STC Pay supported. Docs: https://docs.myfatoorah.com/docs/get-started');
+        $idempotencyKey = (string) ($context['idempotency_key'] ?? Str::uuid());
+
+        $body = [
+            'CustomerName' => $context['customer']['name'] ?? 'NA',
+            'NotificationOption' => 'LNK',
+            'InvoiceValue' => $amountCents / 100,
+            'DisplayCurrencyIso' => strtoupper($currency),
+            'CustomerEmail' => $context['customer']['email'] ?? null,
+            'MobileCountryCode' => $context['customer']['mobile_country_code'] ?? null,
+            'CustomerMobile' => $context['customer']['mobile'] ?? null,
+            'CallBackUrl' => $context['return_url'] ?? '',
+            'ErrorUrl' => $context['error_url'] ?? ($context['return_url'] ?? ''),
+            'Language' => $context['language'] ?? 'EN',
+            'UserDefinedField' => $idempotencyKey,
+        ];
+
+        $response = $this->http()->post('/v2/SendPayment', $body);
+
+        if (! $response->successful()) {
+            throw new RuntimeException('MyFatoorah SendPayment failed: '.$response->body());
+        }
+
+        $payload = (array) $response->json();
+        $data = (array) ($payload['Data'] ?? []);
+        $invoiceId = (string) ($data['InvoiceId'] ?? '');
+        $invoiceUrl = (string) ($data['InvoiceURL'] ?? '');
+
+        if ($invoiceId === '') {
+            throw new RuntimeException('MyFatoorah SendPayment returned no InvoiceId: '.$response->body());
+        }
+
+        $attrs = [
+            'gateway' => 'myfatoorah',
+            'gateway_payment_id' => $invoiceId,
+            'status' => 'pending',
+            'amount_cents' => $amountCents,
+            'currency' => strtoupper($currency),
+            'idempotency_key' => $idempotencyKey,
+            'metadata' => [
+                'redirect_url' => $invoiceUrl,
+                'myfatoorah_response' => $data,
+            ],
+        ];
+
+        if (isset($context['tenant_id'])) {
+            $attrs['tenant_id'] = $context['tenant_id'];
+        }
+        if (isset($context['invoice_id'])) {
+            $attrs['invoice_id'] = $context['invoice_id'];
+        }
+
+        if (! isset($attrs['tenant_id'])) {
+            throw new RuntimeException('MyFatoorah::charge: tenant_id is required in $context for new payments.');
+        }
+
+        $payment = new Payment;
+        $payment->forceFill($attrs)->save();
+
+        return $payment->fresh();
     }
 
     public function authorize(int $amountCents, string $currency, array $context = []): Payment
@@ -234,9 +306,53 @@ class MyFatoorahGateway implements PaymentGateway, SubscriptionGateway
         throw new RuntimeException('MyFatoorah: charge/refund flow not yet wired — Phase 3.3. Implement via /v2/ExecutePayment (hosted or embedded) + /v2/MakeRefund. KNET (KW), Benefit (BH), Mada (SA), STC Pay supported. Docs: https://docs.myfatoorah.com/docs/get-started');
     }
 
+    /**
+     * SANDBOX VERIFICATION REQUIRED — built from MyFatoorah docs, untested.
+     *
+     * POST /v2/MakeRefund — the `Key` is the underlying PaymentId (not the
+     * InvoiceId), per MyFatoorah refund semantics. We currently store the
+     * InvoiceId in `gateway_payment_id` after SendPayment, so callers may
+     * need to swap it for the PaymentId resolved from a payment-status
+     * lookup before calling this — flagged here as part of the sandbox
+     * verification work.
+     *
+     * Amount is sent as a DECIMAL.
+     */
     public function refund(Payment $payment, ?int $amountCents = null): Payment
     {
-        throw new RuntimeException('MyFatoorah: charge/refund flow not yet wired — Phase 3.3. Implement via /v2/ExecutePayment (hosted or embedded) + /v2/MakeRefund. KNET (KW), Benefit (BH), Mada (SA), STC Pay supported. Docs: https://docs.myfatoorah.com/docs/get-started');
+        $refundCents = $amountCents ?? ((int) $payment->amount_cents - (int) $payment->refunded_cents);
+
+        $body = [
+            'Key' => (string) $payment->gateway_payment_id,
+            'KeyType' => 'PaymentId',
+            'RefundChargeOnCustomer' => false,
+            'ServiceChargeOnCustomer' => false,
+            'Amount' => $refundCents / 100,
+        ];
+
+        $response = $this->http()->post('/v2/MakeRefund', $body);
+
+        if (! $response->successful()) {
+            throw new RuntimeException('MyFatoorah MakeRefund failed: '.$response->body());
+        }
+
+        $payload = (array) $response->json();
+        $data = (array) ($payload['Data'] ?? []);
+
+        return DB::transaction(function () use ($payment, $refundCents, $data) {
+            $newRefunded = (int) $payment->refunded_cents + $refundCents;
+            $metadata = (array) ($payment->metadata ?? []);
+            $metadata['myfatoorah_refund'] = $data;
+
+            $payment->forceFill([
+                'refunded_cents' => $newRefunded,
+                'status' => $newRefunded >= (int) $payment->amount_cents ? 'refunded' : 'partially_refunded',
+                'refunded_at' => now(),
+                'metadata' => $metadata,
+            ])->save();
+
+            return $payment->fresh();
+        });
     }
 
     public function void(Payment $payment): Payment
@@ -273,9 +389,91 @@ class MyFatoorahGateway implements PaymentGateway, SubscriptionGateway
     // SubscriptionGateway (V2 Recurring Payment)
     // ------------------------------------------------------------------
 
+    /**
+     * SANDBOX VERIFICATION REQUIRED — built from MyFatoorah docs, untested.
+     *
+     * POST /v2/InitiateRecurringPayment (V2 Recurring). MyFatoorah supports
+     * daily / weekly / monthly cadences or a custom 1–180 day interval. The
+     * upstream returns a redirect URL the customer must visit to authorize
+     * the first charge + save the card token used for subsequent renewals.
+     *
+     * @param  array<string, mixed>  $context
+     */
     public function createSubscription(Tenant $tenant, Plan $plan, array $context = []): Subscription
     {
-        throw new RuntimeException('MyFatoorah: subscription flow not yet wired — Phase 3.3. Implement via V2 Recurring Payment (daily/weekly/monthly/custom 1-180 days). Docs: https://docs.myfatoorah.com/docs/get-started');
+        $idempotencyKey = (string) ($context['idempotency_key'] ?? Str::uuid());
+
+        $body = [
+            'CustomerName' => $context['customer']['name'] ?? $tenant->name ?? 'NA',
+            'NotificationOption' => 'LNK',
+            'InvoiceValue' => (int) $plan->price_cents / 100,
+            'DisplayCurrencyIso' => strtoupper((string) $plan->currency),
+            'CustomerEmail' => $context['customer']['email'] ?? null,
+            'MobileCountryCode' => $context['customer']['mobile_country_code'] ?? null,
+            'CustomerMobile' => $context['customer']['mobile'] ?? null,
+            'CallBackUrl' => $context['return_url'] ?? '',
+            'ErrorUrl' => $context['error_url'] ?? ($context['return_url'] ?? ''),
+            'Language' => $context['language'] ?? 'EN',
+            'UserDefinedField' => $idempotencyKey,
+            'RecurringModel' => $this->mapRecurringModel($plan),
+        ];
+
+        $response = $this->http()->post('/v2/InitiateRecurringPayment', $body);
+
+        if (! $response->successful()) {
+            throw new RuntimeException('MyFatoorah InitiateRecurringPayment failed: '.$response->body());
+        }
+
+        $payload = (array) $response->json();
+        $data = (array) ($payload['Data'] ?? []);
+
+        $recurringId = (string) ($data['RecurringId'] ?? $data['InvoiceId'] ?? '');
+        $redirectUrl = (string) ($data['InvoiceURL'] ?? $data['PaymentURL'] ?? '');
+
+        if ($recurringId === '') {
+            throw new RuntimeException('MyFatoorah InitiateRecurringPayment returned no RecurringId: '.$response->body());
+        }
+
+        $subscription = new Subscription;
+        $subscription->forceFill([
+            'tenant_id' => $tenant->id,
+            'plan_id' => $plan->id,
+            'gateway' => 'myfatoorah',
+            'gateway_subscription_id' => $recurringId,
+            'status' => 'pending',
+            'currency' => strtoupper((string) $plan->currency),
+            'unit_amount_cents' => (int) $plan->price_cents,
+            'quantity' => 1,
+            'metadata' => [
+                'redirect_url' => $redirectUrl,
+                'myfatoorah_response' => $data,
+                'idempotency_key' => $idempotencyKey,
+            ],
+        ])->save();
+
+        return $subscription->fresh();
+    }
+
+    /**
+     * Map our internal Plan billing cadence to MyFatoorah's RecurringModel
+     * payload. MyFatoorah accepts Daily / Weekly / Monthly / Custom — for
+     * anything else we fall through to Monthly to keep the call valid;
+     * sandbox verification should confirm the exact accepted values.
+     *
+     * @return array<string, mixed>
+     */
+    protected function mapRecurringModel(Plan $plan): array
+    {
+        $period = (string) $plan->billing_period;
+        $interval = max(1, (int) $plan->billing_interval);
+
+        return match ($period) {
+            'day' => ['RecurringType' => 'Daily', 'IntervalDays' => $interval],
+            'week' => ['RecurringType' => 'Weekly'],
+            'month' => ['RecurringType' => 'Monthly'],
+            'year' => ['RecurringType' => 'Custom', 'IntervalDays' => min(180, 365 * $interval)],
+            default => ['RecurringType' => 'Monthly'],
+        };
     }
 
     public function changePlan(Subscription $subscription, Plan $newPlan, array $context = []): Subscription

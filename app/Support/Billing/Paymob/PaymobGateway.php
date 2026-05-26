@@ -5,7 +5,10 @@ namespace App\Support\Billing\Paymob;
 use App\Models\Payment;
 use App\Models\WebhookEvent;
 use App\Support\Billing\PaymentGateway;
+use Illuminate\Http\Client\Response;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use RuntimeException;
 
 /**
@@ -89,11 +92,113 @@ class PaymobGateway implements PaymentGateway
     // ------------------------------------------------------------------
 
     /**
-     * @param  array<string, mixed>  $context
+     * Create a Paymob Unified Intention and persist a pending Payment row.
+     *
+     * SANDBOX VERIFICATION REQUIRED — built from Paymob Unified Intentions docs, untested.
+     *
+     * @param  array<string, mixed>  $context  Expected keys:
+     *                                         - tenant_id (required) — used to bind the new Payment row
+     *                                         - invoice_id (optional)
+     *                                         - idempotency_key (optional)
+     *                                         - billing (optional array): first_name, last_name, email, phone_number
+     *                                         - payment_methods (optional list<int>) — overrides config integration IDs
+     *
+     * @see https://developers.paymob.com/paymob-docs/integration-paths/apis
      */
     public function charge(int $amountCents, string $currency, array $context = []): Payment
     {
-        throw new RuntimeException($this->stubMessage());
+        $secret = $this->secretKey();
+        $publicKey = (string) config('billing.gateways.paymob.public_key', '');
+
+        $paymentMethods = $context['payment_methods'] ?? $this->configuredPaymentMethods();
+        if ($paymentMethods === []) {
+            throw new RuntimeException('Paymob: no integration_id_card / integration_id_wallet configured. Set PAYMOB_INTEGRATION_ID_CARD (or pass payment_methods in $context).');
+        }
+
+        $billing = (array) ($context['billing'] ?? []);
+
+        $payload = [
+            'amount' => $amountCents,
+            'currency' => strtoupper($currency),
+            'payment_methods' => array_values(array_map(static fn ($id) => (int) $id, $paymentMethods)),
+            'billing_data' => [
+                'first_name' => (string) ($billing['first_name'] ?? 'NA'),
+                'last_name' => (string) ($billing['last_name'] ?? 'NA'),
+                'email' => (string) ($billing['email'] ?? 'NA'),
+                'phone_number' => (string) ($billing['phone_number'] ?? 'NA'),
+            ],
+        ];
+
+        if (isset($context['items']) && is_array($context['items'])) {
+            $payload['items'] = $context['items'];
+        }
+
+        if (isset($context['extras']) && is_array($context['extras'])) {
+            $payload['extras'] = $context['extras'];
+        }
+
+        $response = Http::withHeaders([
+            'Authorization' => 'Token '.$secret,
+            'Content-Type' => 'application/json',
+        ])->post($this->baseUrl().'/v1/intention', $payload);
+
+        $this->assertOk($response, 'create intention');
+
+        $body = (array) $response->json();
+        $intentionId = (string) ($body['id'] ?? $body['intention_id'] ?? '');
+        $clientSecret = (string) ($body['client_secret'] ?? '');
+
+        if ($intentionId === '' || $clientSecret === '') {
+            throw new RuntimeException('Paymob: /v1/intention returned no id/client_secret. Body: '.$response->body());
+        }
+
+        $redirectUrl = $this->baseUrl().'/unifiedcheckout/?publicKey='.rawurlencode($publicKey).'&clientSecret='.rawurlencode($clientSecret);
+
+        $metadata = array_merge((array) ($body['metadata'] ?? []), [
+            'redirect_url' => $redirectUrl,
+            'client_secret' => $clientSecret,
+            'intention_id' => $intentionId,
+            'payment_methods' => $payload['payment_methods'],
+        ]);
+
+        $attrs = [
+            'gateway' => 'paymob',
+            'gateway_payment_id' => $intentionId,
+            'status' => 'pending',
+            'amount_cents' => $amountCents,
+            'currency' => strtoupper($currency),
+            'metadata' => $metadata,
+        ];
+
+        if (isset($context['idempotency_key'])) {
+            $attrs['idempotency_key'] = $context['idempotency_key'];
+        }
+        if (isset($context['tenant_id'])) {
+            $attrs['tenant_id'] = $context['tenant_id'];
+        }
+        if (isset($context['invoice_id'])) {
+            $attrs['invoice_id'] = $context['invoice_id'];
+        }
+
+        $existing = Payment::query()
+            ->where('gateway', 'paymob')
+            ->where('gateway_payment_id', $intentionId)
+            ->first();
+
+        if ($existing !== null) {
+            $existing->forceFill($attrs)->save();
+
+            return $existing->fresh();
+        }
+
+        if (! isset($attrs['tenant_id'])) {
+            throw new RuntimeException('PaymobGateway::charge: tenant_id is required for new payments. Pass via $context.');
+        }
+
+        $payment = new Payment;
+        $payment->forceFill($attrs)->save();
+
+        return $payment->fresh();
     }
 
     /**
@@ -109,9 +214,53 @@ class PaymobGateway implements PaymentGateway
         throw new RuntimeException($this->stubMessage());
     }
 
+    /**
+     * Refund a Paymob transaction (full or partial).
+     *
+     * SANDBOX VERIFICATION REQUIRED — built from Paymob Unified Intentions docs, untested.
+     *
+     * NOTE: $payment->gateway_payment_id holds the INTENTION id from charge().
+     * Paymob's refund endpoint wants the TRANSACTION id, which lands on the
+     * Payment row's metadata via the webhook handler when the customer completes
+     * the unified checkout. We prefer metadata.transaction_id, then fall back to
+     * gateway_payment_id for the case where the caller has already overwritten it.
+     */
     public function refund(Payment $payment, ?int $amountCents = null): Payment
     {
-        throw new RuntimeException($this->stubMessage());
+        $secret = $this->secretKey();
+
+        $metadata = (array) ($payment->metadata ?? []);
+        $transactionId = (string) ($metadata['transaction_id'] ?? $payment->gateway_payment_id);
+
+        if ($transactionId === '') {
+            throw new RuntimeException('PaymobGateway::refund: no transaction_id on Payment row. Webhook must populate metadata.transaction_id before refund.');
+        }
+
+        $refundAmount = $amountCents ?? (int) $payment->amount_cents;
+
+        $response = Http::withHeaders([
+            'Authorization' => 'Token '.$secret,
+            'Content-Type' => 'application/json',
+        ])->post($this->baseUrl().'/api/acceptance/void_refund/refund', [
+            'transaction_id' => $transactionId,
+            'amount_cents' => $refundAmount,
+        ]);
+
+        $this->assertOk($response, 'refund');
+
+        return DB::transaction(function () use ($payment, $refundAmount, $response) {
+            $newRefunded = (int) $payment->refunded_cents + $refundAmount;
+            $payment->forceFill([
+                'refunded_cents' => $newRefunded,
+                'status' => $newRefunded >= (int) $payment->amount_cents ? 'refunded' : 'partially_refunded',
+                'refunded_at' => now(),
+                'metadata' => array_merge((array) ($payment->metadata ?? []), [
+                    'refund_response' => $response->json(),
+                ]),
+            ])->save();
+
+            return $payment->fresh();
+        });
     }
 
     public function void(Payment $payment): Payment
@@ -263,6 +412,62 @@ class PaymobGateway implements PaymentGateway
             'pk' => 'https://pakistan.paymob.com',
             default => throw new RuntimeException("Paymob: unsupported region [{$region}]. Supported: eg, ae, sa, om, pk."),
         };
+    }
+
+    /**
+     * Resolve the Paymob secret key used for the Unified Intentions API.
+     * Sent as `Authorization: Token {secret_key}`.
+     */
+    protected function secretKey(): string
+    {
+        $secret = (string) config('billing.gateways.paymob.secret_key', '');
+
+        if ($secret === '') {
+            throw new RuntimeException('Paymob: secret_key is not configured. Set PAYMOB_SECRET_KEY in .env.');
+        }
+
+        return $secret;
+    }
+
+    /**
+     * Build the payment_methods list from configured integration IDs.
+     * Card first, then wallet — both optional but at least one is required.
+     *
+     * @return list<int>
+     */
+    protected function configuredPaymentMethods(): array
+    {
+        $methods = [];
+
+        $card = config('billing.gateways.paymob.integration_id_card');
+        if ($card !== null && $card !== '') {
+            $methods[] = (int) $card;
+        }
+
+        $wallet = config('billing.gateways.paymob.integration_id_wallet');
+        if ($wallet !== null && $wallet !== '') {
+            $methods[] = (int) $wallet;
+        }
+
+        return $methods;
+    }
+
+    /**
+     * Throw a descriptive RuntimeException when Paymob returns a non-2xx
+     * response. Body is included so the caller can see the validation error.
+     */
+    protected function assertOk(Response $response, string $operation): void
+    {
+        if ($response->successful()) {
+            return;
+        }
+
+        throw new RuntimeException(sprintf(
+            'Paymob %s failed: HTTP %d — %s',
+            $operation,
+            $response->status(),
+            $response->body(),
+        ));
     }
 
     private function stubMessage(): string

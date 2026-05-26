@@ -12,6 +12,7 @@ use App\Support\Billing\SubscriptionGateway;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
 use RuntimeException;
 
 /**
@@ -248,11 +249,87 @@ class HyperPayGateway implements PaymentGateway, SubscriptionGateway
     }
 
     /**
+     * Prepare an OPPWA COPYandPAY checkout (one-shot DEBIT).
+     *
+     * OPPWA's transaction endpoints require application/x-www-form-urlencoded
+     * (NOT JSON) — the pre-baked http() client already calls asForm(). The
+     * `entityId` is a body param, channel-aware via entityId(); `paymentType`
+     * is DB for immediate capture (use PA from a future authorize() for
+     * pre-auth). The response includes the checkout `id`, which the front
+     * end feeds into paymentWidgets.js to render the COPYandPAY widget.
+     *
+     * To opt-in to tokenization for later one-click / recurring charges,
+     * pass $context['create_registration'] = true — OPPWA will return a
+     * registrationId on the completed checkout.
+     *
+     * Caller is responsible for providing `tenant_id` in $context (Payment
+     * is tenant-scoped). Optional context keys: invoice_id, idempotency_key,
+     * payment_method ('card'|'mada'|'applepay'), create_registration (bool),
+     * extra (array of extra OPPWA form fields, e.g. customer.email).
+     *
      * @param  array<string, mixed>  $context
+     *
+     * // SANDBOX VERIFICATION REQUIRED — built from HyperPay/OPPWA docs, untested
      */
     public function charge(int $amountCents, string $currency, array $context = []): Payment
     {
-        throw new RuntimeException($this->paymentStubMessage());
+        $method = (string) ($context['payment_method'] ?? 'card');
+        $entityId = $this->entityId($method);
+
+        if ($entityId === null) {
+            throw new RuntimeException("HyperPay: no entityId configured for channel [{$method}].");
+        }
+
+        $merchantRef = (string) ($context['idempotency_key'] ?? Str::uuid());
+
+        $body = [
+            'entityId' => $entityId,
+            'amount' => number_format($amountCents / 100, 2, '.', ''),
+            'currency' => strtoupper($currency),
+            'paymentType' => 'DB',
+            'merchantTransactionId' => $merchantRef,
+        ];
+
+        if (! empty($context['create_registration'])) {
+            $body['createRegistration'] = 'true';
+        }
+
+        if (isset($context['extra']) && is_array($context['extra'])) {
+            $body = array_merge($body, $context['extra']);
+        }
+
+        $response = $this->http()
+            ->post('/v1/checkouts', $body)
+            ->throw()
+            ->json();
+
+        $checkoutId = (string) ($response['id'] ?? '');
+
+        if ($checkoutId === '') {
+            throw new RuntimeException('HyperPay: Prepare Checkout response missing id');
+        }
+
+        $widgetScriptUrl = $this->baseUrl().'/v1/paymentWidgets.js?checkoutId='.$checkoutId;
+
+        return Payment::create([
+            'tenant_id' => $context['tenant_id'] ?? null,
+            'invoice_id' => $context['invoice_id'] ?? null,
+            'gateway' => $this->id(),
+            'gateway_payment_id' => $checkoutId,
+            'status' => 'pending',
+            'amount_cents' => $amountCents,
+            'currency' => strtoupper($currency),
+            'idempotency_key' => $merchantRef,
+            'metadata' => [
+                'checkout_id' => $checkoutId,
+                'widget_script_url' => $widgetScriptUrl,
+                'payment_method' => $method,
+                'entity_id' => $entityId,
+                'merchant_transaction_id' => $merchantRef,
+                'create_registration' => (bool) ($context['create_registration'] ?? false),
+                'raw_response' => $response,
+            ],
+        ]);
     }
 
     /**
@@ -268,9 +345,59 @@ class HyperPayGateway implements PaymentGateway, SubscriptionGateway
         throw new RuntimeException($this->paymentStubMessage());
     }
 
+    /**
+     * Refund an OPPWA payment (full or partial).
+     *
+     * OPPWA chains transactions via the source payment id — the `paymentType`
+     * RF (refund) is POSTed to /v1/payments/{paymentId}. The paymentId is the
+     * id of the successful charge transaction (NOT the checkout id) — we
+     * prefer $payment->metadata.payment_id (populated from the success
+     * webhook / verification) and fall back to gateway_payment_id when the
+     * caller stored the payment id directly there.
+     *
+     * // SANDBOX VERIFICATION REQUIRED — built from HyperPay/OPPWA docs, untested
+     */
     public function refund(Payment $payment, ?int $amountCents = null): Payment
     {
-        throw new RuntimeException($this->paymentStubMessage());
+        $sourcePaymentId = (string) ($payment->metadata['payment_id'] ?? $payment->gateway_payment_id ?? '');
+        if ($sourcePaymentId === '') {
+            throw new RuntimeException('HyperPay: cannot refund — missing source payment id on Payment#'.$payment->id);
+        }
+
+        $method = (string) ($payment->metadata['payment_method'] ?? 'card');
+        $entityId = (string) ($payment->metadata['entity_id'] ?? $this->entityId($method) ?? '');
+        if ($entityId === '') {
+            throw new RuntimeException("HyperPay: no entityId available to refund Payment#{$payment->id}.");
+        }
+
+        $alreadyRefunded = (int) ($payment->refunded_cents ?? 0);
+        $remaining = (int) $payment->amount_cents - $alreadyRefunded;
+        $refundCents = $amountCents ?? $remaining;
+
+        $body = [
+            'entityId' => $entityId,
+            'amount' => number_format($refundCents / 100, 2, '.', ''),
+            'currency' => strtoupper((string) $payment->currency),
+            'paymentType' => 'RF',
+        ];
+
+        $response = $this->http()
+            ->post('/v1/payments/'.$sourcePaymentId, $body)
+            ->throw()
+            ->json();
+
+        $newRefunded = $alreadyRefunded + $refundCents;
+
+        $payment->forceFill([
+            'refunded_cents' => $newRefunded,
+            'refunded_at' => now(),
+            'status' => $newRefunded >= (int) $payment->amount_cents ? 'refunded' : 'partially_refunded',
+            'metadata' => array_merge((array) ($payment->metadata ?? []), [
+                'last_refund_response' => $response,
+            ]),
+        ])->save();
+
+        return $payment->fresh();
     }
 
     public function void(Payment $payment): Payment

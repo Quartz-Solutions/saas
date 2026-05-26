@@ -12,6 +12,7 @@ use App\Support\Billing\SubscriptionGateway;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
 use RuntimeException;
 
 /**
@@ -56,11 +57,57 @@ class GeideaGateway implements PaymentGateway, SubscriptionGateway
     // ------------------------------------------------------------------
 
     /**
+     * Create a Geidea Checkout / Hosted Payment Page session.
+     *
+     * Geidea expects the amount as a DECIMAL (e.g. 50.00 for 5000 cents) — we
+     * divide $amountCents by 100 and cast to float in the JSON body. Response
+     * shape (per docs): { session: { id, redirectUrl } }.
+     *
      * @param  array<string, mixed>  $context
+     *
+     * // SANDBOX VERIFICATION REQUIRED — built from Geidea docs, untested
      */
     public function charge(int $amountCents, string $currency, array $context = []): Payment
     {
-        throw new RuntimeException($this->paymentStubMessage());
+        $merchantRef = (string) ($context['idempotency_key'] ?? Str::uuid());
+
+        $body = [
+            'amount' => $amountCents / 100,
+            'currency' => strtoupper($currency),
+            'merchantReferenceId' => $merchantRef,
+            'callbackUrl' => $context['callback_url'] ?? '',
+            'returnUrl' => $context['return_url'] ?? '',
+            'language' => $context['language'] ?? 'en',
+            'customer' => $context['customer'] ?? null,
+        ];
+
+        $response = $this->http()
+            ->post('/payment-intent/api/v2/direct/session', $body)
+            ->throw()
+            ->json();
+
+        $sessionId = (string) ($response['session']['id'] ?? '');
+        $redirectUrl = (string) ($response['session']['redirectUrl'] ?? '');
+
+        if ($sessionId === '') {
+            throw new RuntimeException('Geidea: charge response missing session.id');
+        }
+
+        return Payment::create([
+            'tenant_id' => $context['tenant_id'] ?? null,
+            'invoice_id' => $context['invoice_id'] ?? null,
+            'gateway' => $this->id(),
+            'gateway_payment_id' => $sessionId,
+            'status' => 'pending',
+            'amount_cents' => $amountCents,
+            'currency' => strtoupper($currency),
+            'idempotency_key' => $merchantRef,
+            'metadata' => [
+                'redirect_url' => $redirectUrl,
+                'merchant_reference_id' => $merchantRef,
+                'raw_response' => $response,
+            ],
+        ]);
     }
 
     /**
@@ -76,9 +123,47 @@ class GeideaGateway implements PaymentGateway, SubscriptionGateway
         throw new RuntimeException($this->paymentStubMessage());
     }
 
+    /**
+     * Refund a Geidea order (full or partial).
+     *
+     * Geidea identifies the source by `orderId` — we prefer
+     * $payment->metadata.order_id (populated from the success callback) and
+     * fall back to gateway_payment_id (the original session id) when absent.
+     *
+     * // SANDBOX VERIFICATION REQUIRED — built from Geidea docs, untested
+     */
     public function refund(Payment $payment, ?int $amountCents = null): Payment
     {
-        throw new RuntimeException($this->paymentStubMessage());
+        $orderId = (string) ($payment->metadata['order_id'] ?? $payment->gateway_payment_id ?? '');
+        if ($orderId === '') {
+            throw new RuntimeException('Geidea: cannot refund — missing orderId on Payment#'.$payment->id);
+        }
+
+        $refundCents = $amountCents ?? ($payment->amount_cents - (int) ($payment->refunded_cents ?? 0));
+
+        $body = [
+            'orderId' => $orderId,
+            'amount' => $refundCents / 100,
+            'currency' => strtoupper((string) $payment->currency),
+        ];
+
+        $response = $this->http()
+            ->post('/payment-intent/api/v1/direct/refund', $body)
+            ->throw()
+            ->json();
+
+        $payment->forceFill([
+            'refunded_cents' => (int) ($payment->refunded_cents ?? 0) + $refundCents,
+            'refunded_at' => now(),
+            'status' => ($refundCents >= ($payment->amount_cents - (int) ($payment->refunded_cents ?? 0)))
+                ? 'refunded'
+                : 'partially_refunded',
+            'metadata' => array_merge((array) ($payment->metadata ?? []), [
+                'last_refund_response' => $response,
+            ]),
+        ])->save();
+
+        return $payment->fresh();
     }
 
     public function void(Payment $payment): Payment
@@ -96,11 +181,79 @@ class GeideaGateway implements PaymentGateway, SubscriptionGateway
     // ------------------------------------------------------------------
 
     /**
+     * Create a Geidea recurring-subscription session.
+     *
+     * Geidea's recurring endpoint mirrors the one-off session shape with an
+     * extra `recurring` config block (interval + count). The plan's
+     * billing_period maps to Geidea's recurring.frequency (daily/weekly/
+     * monthly/yearly). When trial_days is set we forward it as
+     * recurring.startDate (today + trial_days, ISO-8601).
+     *
      * @param  array<string, mixed>  $context
+     *
+     * // SANDBOX VERIFICATION REQUIRED — built from Geidea docs, untested
      */
     public function createSubscription(Tenant $tenant, Plan $plan, array $context = []): Subscription
     {
-        throw new RuntimeException($this->subscriptionStubMessage());
+        $merchantRef = (string) ($context['idempotency_key'] ?? Str::uuid());
+
+        $frequency = match ((string) $plan->billing_period) {
+            'day', 'daily' => 'daily',
+            'week', 'weekly' => 'weekly',
+            'year', 'yearly' => 'yearly',
+            default => 'monthly',
+        };
+
+        $recurring = [
+            'frequency' => $frequency,
+            'interval' => (int) ($plan->billing_interval ?? 1),
+        ];
+
+        if ((int) ($plan->trial_days ?? 0) > 0) {
+            $recurring['startDate'] = now()->addDays((int) $plan->trial_days)->toIso8601String();
+        }
+
+        $body = [
+            'amount' => ((int) $plan->price_cents) / 100,
+            'currency' => strtoupper((string) $plan->currency),
+            'merchantReferenceId' => $merchantRef,
+            'callbackUrl' => $context['callback_url'] ?? '',
+            'returnUrl' => $context['return_url'] ?? '',
+            'language' => $context['language'] ?? 'en',
+            'customer' => $context['customer'] ?? null,
+            'recurring' => $recurring,
+        ];
+
+        $response = $this->http()
+            ->post('/payment-intent/api/v2/direct/session/subscription', $body)
+            ->throw()
+            ->json();
+
+        $sessionId = (string) ($response['session']['id'] ?? '');
+        $redirectUrl = (string) ($response['session']['redirectUrl'] ?? '');
+
+        if ($sessionId === '') {
+            throw new RuntimeException('Geidea: createSubscription response missing session.id');
+        }
+
+        return Subscription::create([
+            'tenant_id' => $tenant->id,
+            'plan_id' => $plan->id,
+            'gateway' => $this->id(),
+            'gateway_subscription_id' => $sessionId,
+            'status' => 'pending',
+            'currency' => strtoupper((string) $plan->currency),
+            'unit_amount_cents' => (int) $plan->price_cents,
+            'quantity' => 1,
+            'trial_ends_at' => (int) ($plan->trial_days ?? 0) > 0
+                ? now()->addDays((int) $plan->trial_days)
+                : null,
+            'metadata' => [
+                'redirect_url' => $redirectUrl,
+                'merchant_reference_id' => $merchantRef,
+                'raw_response' => $response,
+            ],
+        ]);
     }
 
     /**

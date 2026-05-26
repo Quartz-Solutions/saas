@@ -57,8 +57,75 @@ class PayPalGateway implements PaymentGateway, SubscriptionGateway
      */
     public function charge(int $amountCents, string $currency, array $context = []): Payment
     {
+        // SANDBOX VERIFICATION REQUIRED — built from PayPal docs, untested
         // Docs: https://developer.paypal.com/docs/api/orders/v2/
-        throw new RuntimeException('PayPal: charge/refund flow not yet wired — Phase 3.1. Implement via /v2/checkout/orders + /v2/payments/captures. Docs: https://developer.paypal.com/docs/api/orders/v2/');
+
+        $payload = array_merge([
+            'intent' => 'CAPTURE',
+            'purchase_units' => [[
+                'amount' => [
+                    'currency_code' => strtoupper($currency),
+                    'value' => $this->formatAmount($amountCents),
+                ],
+            ]],
+        ], $context['paypal'] ?? []);
+
+        $request = Http::withToken($this->accessToken())
+            ->acceptJson()
+            ->asJson();
+
+        if (isset($context['idempotency_key'])) {
+            $request = $request->withHeaders(['PayPal-Request-Id' => (string) $context['idempotency_key']]);
+        }
+
+        $response = $request->post($this->baseUrl().'/v2/checkout/orders', $payload);
+
+        if (! $response->successful()) {
+            throw new RuntimeException('PayPal create-order failed: '.$response->status().' '.$response->body());
+        }
+
+        $order = (array) $response->json();
+        $orderId = (string) ($order['id'] ?? '');
+        $approveUrl = null;
+        foreach ((array) ($order['links'] ?? []) as $link) {
+            if (($link['rel'] ?? null) === 'approve') {
+                $approveUrl = (string) ($link['href'] ?? '');
+                break;
+            }
+        }
+
+        $attrs = [
+            'gateway' => 'paypal',
+            'gateway_payment_id' => $orderId,
+            'status' => 'pending',
+            'amount_cents' => $amountCents,
+            'currency' => strtoupper($currency),
+            'metadata' => array_merge(
+                (array) ($order['metadata'] ?? []),
+                ['approve_url' => $approveUrl, 'paypal_order' => $order],
+            ),
+        ];
+
+        if (isset($context['idempotency_key'])) {
+            $attrs['idempotency_key'] = (string) $context['idempotency_key'];
+        }
+
+        if (isset($context['tenant_id'])) {
+            $attrs['tenant_id'] = $context['tenant_id'];
+        }
+
+        if (isset($context['invoice_id'])) {
+            $attrs['invoice_id'] = $context['invoice_id'];
+        }
+
+        if (! isset($attrs['tenant_id'])) {
+            throw new RuntimeException('PayPal charge(): tenant_id is required. Pass via $context.');
+        }
+
+        $payment = new Payment;
+        $payment->forceFill($attrs)->save();
+
+        return $payment->fresh();
     }
 
     /**
@@ -78,8 +145,51 @@ class PayPalGateway implements PaymentGateway, SubscriptionGateway
 
     public function refund(Payment $payment, ?int $amountCents = null): Payment
     {
-        // Docs: https://developer.paypal.com/docs/api/orders/v2/
-        throw new RuntimeException('PayPal: charge/refund flow not yet wired — Phase 3.1. Implement via /v2/checkout/orders + /v2/payments/captures. Docs: https://developer.paypal.com/docs/api/orders/v2/');
+        // SANDBOX VERIFICATION REQUIRED — built from PayPal docs, untested
+        // Docs: https://developer.paypal.com/docs/api/payments/v2/#captures_refund
+
+        $metadata = (array) ($payment->metadata ?? []);
+        $captureId = (string) ($metadata['capture_id'] ?? '');
+
+        if ($captureId === '') {
+            throw new RuntimeException('PayPal refund(): metadata.capture_id is required on Payment; capture must complete before refund.');
+        }
+
+        $body = [];
+        if ($amountCents !== null) {
+            $body['amount'] = [
+                'value' => $this->formatAmount($amountCents),
+                'currency_code' => strtoupper((string) $payment->currency),
+            ];
+        }
+
+        $response = Http::withToken($this->accessToken())
+            ->acceptJson()
+            ->asJson()
+            ->post($this->baseUrl()."/v2/payments/captures/{$captureId}/refund", $body);
+
+        if (! $response->successful()) {
+            throw new RuntimeException('PayPal refund failed: '.$response->status().' '.$response->body());
+        }
+
+        $refund = (array) $response->json();
+        $refundedDelta = $amountCents
+            ?? (int) round(((float) ($refund['amount']['value'] ?? 0)) * 100)
+            ?: (int) $payment->amount_cents;
+
+        $newRefunded = (int) $payment->refunded_cents + (int) $refundedDelta;
+
+        $payment->forceFill([
+            'refunded_cents' => $newRefunded,
+            'status' => $newRefunded >= (int) $payment->amount_cents ? 'refunded' : 'partially_refunded',
+            'refunded_at' => now(),
+            'metadata' => array_merge($metadata, [
+                'last_refund' => $refund,
+                'last_refund_id' => (string) ($refund['id'] ?? ''),
+            ]),
+        ])->save();
+
+        return $payment->fresh();
     }
 
     public function void(Payment $payment): Payment
@@ -103,8 +213,75 @@ class PayPalGateway implements PaymentGateway, SubscriptionGateway
      */
     public function createSubscription(Tenant $tenant, Plan $plan, array $context = []): Subscription
     {
-        // Docs: https://developer.paypal.com/docs/api/subscriptions/v1/
-        throw new RuntimeException('PayPal: subscription flow not yet wired — Phase 3.1. Implement via /v1/billing/subscriptions. Docs: https://developer.paypal.com/docs/api/subscriptions/v1/');
+        // SANDBOX VERIFICATION REQUIRED — built from PayPal docs, untested
+        // Docs: https://developer.paypal.com/docs/api/subscriptions/v1/#subscriptions_create
+
+        $gatewayIds = (array) ($plan->gateway_ids ?? []);
+        $paypalPlanId = (string) ($gatewayIds['paypal'] ?? '');
+
+        if ($paypalPlanId === '') {
+            throw new RuntimeException("Plan [{$plan->slug}] has no PayPal plan id (gateway_ids.paypal).");
+        }
+
+        $payload = array_merge([
+            'plan_id' => $paypalPlanId,
+            'custom_id' => (string) $tenant->id,
+        ], $context['paypal'] ?? []);
+
+        $request = Http::withToken($this->accessToken())
+            ->acceptJson()
+            ->asJson();
+
+        if (isset($context['idempotency_key'])) {
+            $request = $request->withHeaders(['PayPal-Request-Id' => (string) $context['idempotency_key']]);
+        }
+
+        $response = $request->post($this->baseUrl().'/v1/billing/subscriptions', $payload);
+
+        if (! $response->successful()) {
+            throw new RuntimeException('PayPal create-subscription failed: '.$response->status().' '.$response->body());
+        }
+
+        $sub = (array) $response->json();
+        $subId = (string) ($sub['id'] ?? '');
+        $approveUrl = null;
+        foreach ((array) ($sub['links'] ?? []) as $link) {
+            if (($link['rel'] ?? null) === 'approve') {
+                $approveUrl = (string) ($link['href'] ?? '');
+                break;
+            }
+        }
+
+        $existing = Subscription::query()
+            ->where('gateway', 'paypal')
+            ->where('gateway_subscription_id', $subId)
+            ->first();
+
+        $attrs = [
+            'tenant_id' => $tenant->id,
+            'plan_id' => $plan->id,
+            'gateway' => 'paypal',
+            'gateway_subscription_id' => $subId,
+            'status' => 'approval_pending',
+            'currency' => strtoupper((string) $plan->currency),
+            'unit_amount_cents' => (int) $plan->price_cents,
+            'quantity' => 1,
+            'metadata' => array_merge(
+                (array) ($sub['metadata'] ?? []),
+                ['approve_url' => $approveUrl, 'paypal_subscription' => $sub],
+            ),
+        ];
+
+        if ($existing !== null) {
+            $existing->forceFill($attrs)->save();
+
+            return $existing->fresh();
+        }
+
+        $subscription = new Subscription;
+        $subscription->forceFill($attrs)->save();
+
+        return $subscription->fresh();
     }
 
     /**
@@ -121,8 +298,33 @@ class PayPalGateway implements PaymentGateway, SubscriptionGateway
      */
     public function cancel(Subscription $subscription, array $context = []): Subscription
     {
-        // Docs: https://developer.paypal.com/docs/api/subscriptions/v1/
-        throw new RuntimeException('PayPal: subscription flow not yet wired — Phase 3.1. Implement via /v1/billing/subscriptions. Docs: https://developer.paypal.com/docs/api/subscriptions/v1/');
+        // SANDBOX VERIFICATION REQUIRED — built from PayPal docs, untested
+        // Docs: https://developer.paypal.com/docs/api/subscriptions/v1/#subscriptions_cancel
+
+        $reason = (string) ($context['reason'] ?? 'Cancelled by user');
+
+        $response = Http::withToken($this->accessToken())
+            ->acceptJson()
+            ->asJson()
+            ->post(
+                $this->baseUrl()."/v1/billing/subscriptions/{$subscription->gateway_subscription_id}/cancel",
+                ['reason' => $reason],
+            );
+
+        // PayPal returns 204 No Content on success.
+        if (! $response->successful() && $response->status() !== 204) {
+            throw new RuntimeException('PayPal cancel-subscription failed: '.$response->status().' '.$response->body());
+        }
+
+        $subscription->forceFill([
+            'status' => 'canceled',
+            'cancel_at_period_end' => false,
+            'canceled_at' => now(),
+            'cancellation_reason' => $reason,
+            'ends_at' => now(),
+        ])->save();
+
+        return $subscription->fresh();
     }
 
     public function resume(Subscription $subscription): Subscription
@@ -319,5 +521,15 @@ class PayPalGateway implements PaymentGateway, SubscriptionGateway
         $mode = (string) config('billing.gateways.paypal.mode', 'sandbox');
 
         return $mode === 'live' ? 'live' : 'sandbox';
+    }
+
+    /**
+     * Convert integer minor units (cents) to PayPal's decimal string format
+     * (e.g. 1234 -> "12.34"). PayPal's REST API expects amounts as strings
+     * with two decimal places for most currencies.
+     */
+    private function formatAmount(int $amountCents): string
+    {
+        return number_format($amountCents / 100, 2, '.', '');
     }
 }

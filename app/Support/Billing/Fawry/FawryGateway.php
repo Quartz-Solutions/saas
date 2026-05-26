@@ -11,7 +11,9 @@ use App\Support\Billing\PaymentGateway;
 use App\Support\Billing\SubscriptionGateway;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
 use RuntimeException;
 
 /**
@@ -50,9 +52,101 @@ class FawryGateway implements PaymentGateway, SubscriptionGateway
     // PaymentGateway — stubs
     // ------------------------------------------------------------------
 
+    /**
+     * SANDBOX VERIFICATION REQUIRED — built from Fawry docs, untested.
+     *
+     * Pay-via-Kiosk reference flow. POSTs to
+     * `{baseUrl}/ECommerceWeb/Fawry/payments/charge` and persists a Payment
+     * row in `pending` status. The response `referenceNumber` is the FawryRef
+     * the customer uses at a kiosk / wallet to settle the order; final
+     * confirmation arrives later via Server Notification V2.
+     *
+     * @param  array<string, mixed>  $context
+     */
     public function charge(int $amountCents, string $currency, array $context = []): Payment
     {
-        throw new RuntimeException('Fawry: charge/refund flow not yet wired — Phase 3.2. Implement via Create Payment Request API (returns fawryRefNumber valid ~30 days for kiosk + online). Docs: https://developer.fawrystaging.com/docs-home');
+        // SANDBOX VERIFICATION REQUIRED — built from Fawry docs, untested.
+        $merchantCode = (string) config('billing.gateways.fawry.merchant_code');
+        $merchantRefNum = (string) ($context['idempotency_key'] ?? Str::uuid());
+        $amount = $this->formatAmount($amountCents / 100);
+        $returnUrl = (string) ($context['return_url'] ?? '');
+        $paymentExpiry = 30 * 24 * 3600 * 1000; // 30 days in ms.
+
+        $chargeItems = $context['items'] ?? [[
+            'itemId' => '1',
+            'description' => 'Subscription',
+            'price' => $amount,
+            'quantity' => 1,
+        ]];
+
+        $body = [
+            'merchantCode' => $merchantCode,
+            'merchantRefNum' => $merchantRefNum,
+            'customerName' => $context['customer']['name'] ?? 'NA',
+            'customerMobile' => $context['customer']['mobile'] ?? '01000000000',
+            'customerEmail' => $context['customer']['email'] ?? '',
+            'amount' => $amount,
+            'currencyCode' => 'EGP',
+            'chargeItems' => $chargeItems,
+            'returnUrl' => $returnUrl,
+            'paymentExpiry' => $paymentExpiry,
+            'paymentMethod' => 'PAYATFAWRY',
+            'signature' => $this->signRequest([
+                $merchantCode,
+                $merchantRefNum,
+                '',             // customerProfileId
+                'PAYATFAWRY',   // paymentMethod
+                $amount,        // amount (2dp)
+                '',             // cardNumber
+                '',             // cardExpiryYear
+                '',             // cardExpiryMonth
+                '',             // cvv
+                $returnUrl,
+            ]),
+        ];
+
+        $response = $this->http()
+            ->post('/ECommerceWeb/Fawry/payments/charge', $body)
+            ->throw()
+            ->json();
+
+        $referenceNumber = (string) ($response['referenceNumber'] ?? '');
+        if ($referenceNumber === '') {
+            throw new RuntimeException('Fawry charge: missing referenceNumber in response — '.json_encode($response));
+        }
+
+        if (! isset($context['tenant_id'])) {
+            throw new RuntimeException('Fawry charge: tenant_id is required in $context for new payments.');
+        }
+
+        $attrs = [
+            'tenant_id' => $context['tenant_id'],
+            'gateway' => 'fawry',
+            'gateway_payment_id' => $referenceNumber,
+            'status' => 'pending',
+            'amount_cents' => $amountCents,
+            'refunded_cents' => 0,
+            'currency' => strtoupper($currency),
+            'idempotency_key' => $merchantRefNum,
+            'metadata' => [
+                'fawry_ref' => $referenceNumber,
+                'merchant_ref_num' => $merchantRefNum,
+                'expiry' => $response['expirationTime'] ?? $paymentExpiry,
+                'status_code' => $response['statusCode'] ?? null,
+                'status_description' => $response['statusDescription'] ?? null,
+            ],
+        ];
+
+        if (isset($context['invoice_id'])) {
+            $attrs['invoice_id'] = $context['invoice_id'];
+        }
+
+        return DB::transaction(function () use ($attrs) {
+            $payment = new Payment;
+            $payment->forceFill($attrs)->save();
+
+            return $payment->fresh();
+        });
     }
 
     public function authorize(int $amountCents, string $currency, array $context = []): Payment
@@ -65,9 +159,50 @@ class FawryGateway implements PaymentGateway, SubscriptionGateway
         throw new RuntimeException('Fawry: charge/refund flow not yet wired — Phase 3.2. Implement via Create Payment Request API (returns fawryRefNumber valid ~30 days for kiosk + online). Docs: https://developer.fawrystaging.com/docs-home');
     }
 
+    /**
+     * SANDBOX VERIFICATION REQUIRED — built from Fawry docs, untested.
+     *
+     * POSTs to `{baseUrl}/ECommerceWeb/Fawry/payments/refund` with the
+     * FawryRef (gateway_payment_id), refund amount, and a signature over
+     * merchantCode + referenceNumber + refundAmount(2dp) + (reason ?? '')
+     * + secureKey.
+     */
     public function refund(Payment $payment, ?int $amountCents = null): Payment
     {
-        throw new RuntimeException('Fawry: charge/refund flow not yet wired — Phase 3.2. Implement via Create Payment Request API (returns fawryRefNumber valid ~30 days for kiosk + online). Docs: https://developer.fawrystaging.com/docs-home');
+        // SANDBOX VERIFICATION REQUIRED — built from Fawry docs, untested.
+        $merchantCode = (string) config('billing.gateways.fawry.merchant_code');
+        $referenceNumber = (string) $payment->gateway_payment_id;
+        $refundCents = $amountCents ?? ((int) $payment->amount_cents - (int) $payment->refunded_cents);
+        $refundAmount = $this->formatAmount($refundCents / 100);
+        $reason = (string) ($payment->metadata['refund_reason'] ?? '');
+
+        $body = [
+            'merchantCode' => $merchantCode,
+            'referenceNumber' => $referenceNumber,
+            'refundAmount' => $refundAmount,
+            'reason' => $reason,
+            'signature' => $this->signRequest([
+                $merchantCode,
+                $referenceNumber,
+                $refundAmount,
+                $reason,
+            ]),
+        ];
+
+        $this->http()
+            ->post('/ECommerceWeb/Fawry/payments/refund', $body)
+            ->throw();
+
+        return DB::transaction(function () use ($payment, $refundCents) {
+            $newRefunded = (int) $payment->refunded_cents + $refundCents;
+            $payment->forceFill([
+                'refunded_cents' => $newRefunded,
+                'status' => $newRefunded >= (int) $payment->amount_cents ? 'refunded' : 'partially_refunded',
+                'refunded_at' => now(),
+            ])->save();
+
+            return $payment->fresh();
+        });
     }
 
     public function void(Payment $payment): Payment

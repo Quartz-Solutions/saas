@@ -160,6 +160,52 @@ class StripeGateway implements PaymentGateway, SubscriptionGateway
         return (string) $session->url;
     }
 
+    /**
+     * Create a hosted Stripe Checkout Session for subscribing a new (or
+     * existing) tenant to the given plan. Returns the URL Stripe expects the
+     * customer to be redirected to. Use this for sign-up checkout where the
+     * tenant has no payment method yet — Stripe collects it on the hosted page.
+     *
+     * On successful payment Stripe fires the webhook events the gateway already
+     * handles, so the local Subscription row will be reconciled automatically.
+     */
+    public function checkoutSessionUrl(
+        Tenant $tenant,
+        Plan $plan,
+        string $successUrl,
+        string $cancelUrl,
+    ): string {
+        $priceId = $plan->gateway_ids['stripe'] ?? null;
+        if (! $priceId) {
+            $priceId = $this->syncPriceForPlan($plan);
+        }
+        if (! $priceId) {
+            throw new RuntimeException("Plan [{$plan->slug}] has no Stripe Price ID (free plans cannot use Checkout).");
+        }
+
+        $customer = $this->ensureCustomer($tenant);
+
+        $session = $this->client->checkout->sessions->create([
+            'mode' => 'subscription',
+            'customer' => $customer->gateway_customer_id,
+            'line_items' => [
+                ['price' => $priceId, 'quantity' => 1],
+            ],
+            'success_url' => $successUrl.'?session_id={CHECKOUT_SESSION_ID}',
+            'cancel_url' => $cancelUrl,
+            'subscription_data' => [
+                'metadata' => [
+                    'tenant_id' => (string) $tenant->id,
+                    'plan_id' => (string) $plan->id,
+                    'plan_slug' => $plan->slug,
+                ],
+                'trial_period_days' => $plan->trial_days > 0 ? $plan->trial_days : null,
+            ],
+        ]);
+
+        return (string) $session->url;
+    }
+
     // ------------------------------------------------------------------
     // PaymentGateway
     // ------------------------------------------------------------------

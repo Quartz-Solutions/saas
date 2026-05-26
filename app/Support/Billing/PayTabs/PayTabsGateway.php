@@ -11,7 +11,9 @@ use App\Support\Billing\PaymentGateway;
 use App\Support\Billing\SubscriptionGateway;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
 use RuntimeException;
 
 /**
@@ -125,9 +127,88 @@ class PayTabsGateway implements PaymentGateway, SubscriptionGateway
     // PaymentGateway
     // ------------------------------------------------------------------
 
+    /**
+     * SANDBOX VERIFICATION REQUIRED — built from PayTabs docs, untested.
+     *
+     * Creates a hosted PayPage by POST /payment/request. PayTabs responds
+     * with a `tran_ref` (gateway payment id) and a `redirect_url` the
+     * client must navigate to in order to complete the payment. The
+     * Payment row is persisted as `pending` until the IPN promotes it.
+     *
+     * @param  array<string, mixed>  $context
+     */
     public function charge(int $amountCents, string $currency, array $context = []): Payment
     {
-        throw new RuntimeException('PayTabs: charge/refund flow not yet wired — Phase 3.2. Implement via /payment/request (hosted PayPage) or /payment/managed (managed form). Auth header = raw server_key. Docs: https://docs.paytabs.com/manuals/Find-Your-Fit-Start-Building/');
+        $profileId = (int) (config('billing.gateways.paytabs.profile_id') ?: $this->profileId);
+
+        $cartId = (string) ($context['idempotency_key'] ?? Str::uuid());
+
+        $payload = [
+            'profile_id' => $profileId,
+            'tran_type' => 'sale',
+            'tran_class' => 'ecom',
+            'cart_id' => $cartId,
+            'cart_description' => $context['description'] ?? 'Subscription',
+            'cart_currency' => strtoupper($currency),
+            'cart_amount' => number_format($amountCents / 100, 2, '.', ''),
+            'customer_details' => $context['customer'] ?? [
+                'name' => 'NA',
+                'email' => 'na@example.com',
+                'phone' => 'NA',
+                'street1' => 'NA',
+                'city' => 'NA',
+                'state' => 'NA',
+                'country' => 'SAU',
+                'zip' => '00000',
+            ],
+            'return' => $context['return_url'] ?? '',
+            'callback' => $context['callback_url'] ?? '',
+        ];
+
+        $response = $this->http()->post('/payment/request', $payload);
+
+        if (! $response->successful()) {
+            throw new RuntimeException('PayTabs /payment/request failed: '.$response->status().' '.$response->body());
+        }
+
+        $body = (array) $response->json();
+        $tranRef = (string) ($body['tran_ref'] ?? '');
+        $redirectUrl = (string) ($body['redirect_url'] ?? '');
+
+        if ($tranRef === '') {
+            throw new RuntimeException('PayTabs /payment/request returned no tran_ref: '.$response->body());
+        }
+
+        if (! isset($context['tenant_id'])) {
+            throw new RuntimeException('PayTabs::charge: tenant_id is required in $context.');
+        }
+
+        $attrs = [
+            'tenant_id' => $context['tenant_id'],
+            'gateway' => $this->id(),
+            'gateway_payment_id' => $tranRef,
+            'status' => 'pending',
+            'amount_cents' => $amountCents,
+            'currency' => strtoupper($currency),
+            'metadata' => array_merge(
+                (array) ($context['metadata'] ?? []),
+                ['redirect_url' => $redirectUrl, 'cart_id' => $cartId, 'paytabs' => $body],
+            ),
+            'idempotency_key' => $context['idempotency_key'] ?? null,
+        ];
+
+        if (isset($context['invoice_id'])) {
+            $attrs['invoice_id'] = $context['invoice_id'];
+        }
+
+        if (isset($context['payment_method_id'])) {
+            $attrs['payment_method_id'] = $context['payment_method_id'];
+        }
+
+        $payment = new Payment;
+        $payment->forceFill($attrs)->save();
+
+        return $payment->fresh();
     }
 
     public function authorize(int $amountCents, string $currency, array $context = []): Payment
@@ -140,9 +221,56 @@ class PayTabsGateway implements PaymentGateway, SubscriptionGateway
         throw new RuntimeException('PayTabs: charge/refund flow not yet wired — Phase 3.2. Implement via /payment/request (hosted PayPage) or /payment/managed (managed form). Auth header = raw server_key. Docs: https://docs.paytabs.com/manuals/Find-Your-Fit-Start-Building/');
     }
 
+    /**
+     * SANDBOX VERIFICATION REQUIRED — built from PayTabs docs, untested.
+     *
+     * Refunds re-use POST /payment/request with `tran_type=refund` and
+     * the original `tran_ref`. PayTabs supports partial refunds — when
+     * $amountCents is null we refund the full outstanding amount
+     * (amount_cents - refunded_cents).
+     */
     public function refund(Payment $payment, ?int $amountCents = null): Payment
     {
-        throw new RuntimeException('PayTabs: charge/refund flow not yet wired — Phase 3.2. Implement via /payment/request (hosted PayPage) or /payment/managed (managed form). Auth header = raw server_key. Docs: https://docs.paytabs.com/manuals/Find-Your-Fit-Start-Building/');
+        $profileId = (int) (config('billing.gateways.paytabs.profile_id') ?: $this->profileId);
+
+        $remaining = (int) $payment->amount_cents - (int) $payment->refunded_cents;
+        $refundCents = $amountCents ?? $remaining;
+
+        if ($refundCents <= 0) {
+            throw new RuntimeException('PayTabs::refund: nothing left to refund on payment '.$payment->id);
+        }
+
+        $payload = [
+            'profile_id' => $profileId,
+            'tran_type' => 'refund',
+            'tran_class' => 'ecom',
+            'tran_ref' => $payment->gateway_payment_id,
+            'cart_id' => (string) ($payment->idempotency_key ?? $payment->id),
+            'cart_description' => 'Refund for payment '.$payment->id,
+            'cart_currency' => strtoupper((string) $payment->currency),
+            'cart_amount' => number_format($refundCents / 100, 2, '.', ''),
+        ];
+
+        $response = $this->http()->post('/payment/request', $payload);
+
+        if (! $response->successful()) {
+            throw new RuntimeException('PayTabs refund failed: '.$response->status().' '.$response->body());
+        }
+
+        $body = (array) $response->json();
+
+        return DB::transaction(function () use ($payment, $refundCents, $body) {
+            $newRefunded = (int) $payment->refunded_cents + $refundCents;
+
+            $payment->forceFill([
+                'refunded_cents' => $newRefunded,
+                'status' => $newRefunded >= (int) $payment->amount_cents ? 'refunded' : 'partially_refunded',
+                'refunded_at' => now(),
+                'metadata' => array_merge((array) $payment->metadata, ['paytabs_refund' => $body]),
+            ])->save();
+
+            return $payment->fresh();
+        });
     }
 
     public function void(Payment $payment): Payment

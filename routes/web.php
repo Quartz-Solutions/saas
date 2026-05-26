@@ -6,6 +6,7 @@ use App\Http\Controllers\Auth\SocialController;
 use App\Http\Controllers\Billing\BillingController;
 use App\Http\Controllers\Billing\InvoicesController;
 use App\Http\Controllers\Billing\WebhookController;
+use App\Http\Controllers\Onboarding\GetStartedController;
 use App\Http\Controllers\Tenants\TenantInvitationsController;
 use App\Http\Controllers\Tenants\TenantOnboardingController;
 use App\Http\Controllers\Tenants\TenantsController;
@@ -45,7 +46,20 @@ Route::middleware('guest')->group(function () {
     Route::get('auth/{provider}/callback', [SocialController::class, 'callback'])
         ->whereIn('provider', ['google', 'github'])
         ->name('auth.social.callback');
+
+    // Combined sign-up + tenant creation + (free or paid) plan checkout.
+    Route::get('get-started', [GetStartedController::class, 'show'])
+        ->name('onboarding.get-started');
+    Route::post('get-started', [GetStartedController::class, 'store'])
+        ->middleware('throttle:10,1')
+        ->name('onboarding.get-started.store');
 });
+
+// Stripe Checkout return URL — gateway redirects here after the user
+// completes (or skips) payment. Lands at /t/{slug}/dashboard.
+Route::middleware(['auth'])
+    ->get('onboarding/{tenantSlug}/return', [GetStartedController::class, 'return'])
+    ->name('onboarding.return');
 
 /*
 |---------------------------------------------------------------------------
