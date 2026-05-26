@@ -3,9 +3,11 @@ import {
     BookOpen,
     Building2,
     Component,
+    CreditCard,
     FolderGit2,
     LayoutGrid,
     Mail,
+    Receipt,
     Settings as SettingsIcon,
     UsersRound,
 } from 'lucide-react';
@@ -64,6 +66,16 @@ export function AppSidebar() {
                   title: 'Invitations',
                   href: tenantRoutes.invitations.index({ tenantSlug }),
                   icon: Mail,
+              },
+              {
+                  title: 'Billing',
+                  href: tenantRoutes.billing.plans({ tenantSlug }),
+                  icon: CreditCard,
+              },
+              {
+                  title: 'Invoices',
+                  href: tenantRoutes.billing.invoices.index({ tenantSlug }),
+                  icon: Receipt,
               },
               {
                   title: 'Settings',
