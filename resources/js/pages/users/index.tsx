@@ -1,5 +1,5 @@
 import { Form, Head, router, usePage } from '@inertiajs/react';
-import { MoreHorizontal, Plus, ShieldCheck, UserPlus } from 'lucide-react';
+import { MoreHorizontal, ShieldCheck, UserPlus } from 'lucide-react';
 import { useState } from 'react';
 import UsersController from '@/actions/App/Http/Controllers/Users/UsersController';
 import {
@@ -40,17 +40,9 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
-} from '@/components/ui/select';
 import { Spinner } from '@/components/ui/spinner';
-import { dashboard } from '@/routes';
-import { index as usersIndex } from '@/routes/users';
 import { formatDate, formatDateTime } from '@/lib/utils';
+import tenantRoutes from '@/routes/tenants';
 
 type UserRow = {
     id: number;
@@ -73,32 +65,36 @@ type Props = {
     };
 };
 
-function reload(params: {
-    search?: string;
-    filters?: Record<string, string>;
-    sort?: { column: string; direction: 'asc' | 'desc' };
-    page?: number;
-}) {
-    const data: Record<string, string | number | Record<string, string>> = {};
-    if (params.search !== undefined && params.search !== '') data.search = params.search;
-    if (params.filters && Object.keys(params.filters).length > 0) data.filter = params.filters;
-    if (params.sort) {
-        data.sort = params.sort.column;
-        data.direction = params.sort.direction;
-    }
-    if (params.page && params.page > 1) data.page = params.page;
-
-    router.get(usersIndex().url, data, {
-        preserveState: true,
-        preserveScroll: true,
-        replace: true,
-        only: ['users', 'tableState'],
-    });
-}
-
 export default function UsersIndex({ users, tableState }: Props) {
-    const { auth } = usePage<{ auth: { user: { id: number } } }>().props;
+    const { auth, currentTenant } = usePage<{
+        auth: { user: { id: number } };
+        currentTenant: { slug: string } | null;
+    }>().props;
     const currentUserId = auth.user.id;
+    const tenantSlug = currentTenant?.slug ?? '';
+
+    const reload = (params: {
+        search?: string;
+        filters?: Record<string, string>;
+        sort?: { column: string; direction: 'asc' | 'desc' };
+        page?: number;
+    }) => {
+        const data: Record<string, string | number | Record<string, string>> = {};
+        if (params.search !== undefined && params.search !== '') data.search = params.search;
+        if (params.filters && Object.keys(params.filters).length > 0) data.filter = params.filters;
+        if (params.sort) {
+            data.sort = params.sort.column;
+            data.direction = params.sort.direction;
+        }
+        if (params.page && params.page > 1) data.page = params.page;
+
+        router.get(tenantRoutes.users.index({ tenantSlug }).url, data, {
+            preserveState: true,
+            preserveScroll: true,
+            replace: true,
+            only: ['users', 'tableState'],
+        });
+    };
 
     const [createOpen, setCreateOpen] = useState(false);
     const [editingUser, setEditingUser] = useState<UserRow | null>(null);
@@ -261,16 +257,22 @@ export default function UsersIndex({ users, tableState }: Props) {
                 />
             </div>
 
-            <CreateUserDialog open={createOpen} onOpenChange={setCreateOpen} />
+            <CreateUserDialog
+                open={createOpen}
+                onOpenChange={setCreateOpen}
+                tenantSlug={tenantSlug}
+            />
 
             <EditUserDialog
                 user={editingUser}
                 onClose={() => setEditingUser(null)}
+                tenantSlug={tenantSlug}
             />
 
             <DeleteUserDialog
                 user={deletingUser}
                 onClose={() => setDeletingUser(null)}
+                tenantSlug={tenantSlug}
             />
         </>
     );
@@ -279,9 +281,11 @@ export default function UsersIndex({ users, tableState }: Props) {
 function CreateUserDialog({
     open,
     onOpenChange,
+    tenantSlug,
 }: {
     open: boolean;
     onOpenChange: (v: boolean) => void;
+    tenantSlug: string;
 }) {
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
@@ -294,7 +298,7 @@ function CreateUserDialog({
                     </DialogDescription>
                 </DialogHeader>
                 <Form
-                    {...UsersController.store.form()}
+                    {...UsersController.store.form({ tenantSlug })}
                     options={{ preserveScroll: true }}
                     resetOnSuccess
                     onSuccess={() => onOpenChange(false)}
@@ -367,9 +371,11 @@ function CreateUserDialog({
 function EditUserDialog({
     user,
     onClose,
+    tenantSlug,
 }: {
     user: UserRow | null;
     onClose: () => void;
+    tenantSlug: string;
 }) {
     return (
         <Dialog open={user !== null} onOpenChange={(open) => !open && onClose()}>
@@ -383,7 +389,7 @@ function EditUserDialog({
                 </DialogHeader>
                 {user && (
                     <Form
-                        {...UsersController.update.form({ user: user.id })}
+                        {...UsersController.update.form({ tenantSlug, user: user.id })}
                         options={{ preserveScroll: true }}
                         onSuccess={onClose}
                         className="space-y-4"
@@ -478,9 +484,11 @@ function VerifiedRow({ user }: { user: UserRow }) {
 function DeleteUserDialog({
     user,
     onClose,
+    tenantSlug,
 }: {
     user: UserRow | null;
     onClose: () => void;
+    tenantSlug: string;
 }) {
     return (
         <AlertDialog
@@ -499,7 +507,7 @@ function DeleteUserDialog({
                 </AlertDialogHeader>
                 {user && (
                     <Form
-                        {...UsersController.destroy.form({ user: user.id })}
+                        {...UsersController.destroy.form({ tenantSlug, user: user.id })}
                         options={{ preserveScroll: true }}
                         onSuccess={onClose}
                     >
@@ -526,8 +534,18 @@ function DeleteUserDialog({
 }
 
 UsersIndex.layout = {
-    breadcrumbs: [
-        { title: 'Dashboard', href: dashboard() },
-        { title: 'Users', href: usersIndex() },
-    ],
+    breadcrumbs: ({
+        currentTenant,
+    }: {
+        currentTenant: { slug: string; name: string } | null;
+    }) => {
+        const slug = currentTenant?.slug ?? '';
+        return [
+            {
+                title: currentTenant?.name ?? 'Tenant',
+                href: tenantRoutes.dashboard({ tenantSlug: slug }),
+            },
+            { title: 'Users', href: tenantRoutes.users.index({ tenantSlug: slug }) },
+        ];
+    },
 };

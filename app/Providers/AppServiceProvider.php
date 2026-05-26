@@ -3,6 +3,8 @@
 namespace App\Providers;
 
 use App\Support\Auth\SocialProviderRegistry;
+use App\Support\Tenancy\PathTenantResolver;
+use App\Support\Tenancy\TenantResolver;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
@@ -19,9 +21,6 @@ class AppServiceProvider extends ServiceProvider
         $this->app->singleton(SocialProviderRegistry::class, function () {
             $registry = new SocialProviderRegistry;
 
-            // Register providers whose credentials are configured. Mirrors
-            // the HardwareRegistry pattern — only enabled drivers appear in
-            // the registry and therefore in the login UI.
             if (config('services.google.client_id')) {
                 $registry->register('google', 'Google', 'google');
             }
@@ -32,6 +31,8 @@ class AppServiceProvider extends ServiceProvider
 
             return $registry;
         });
+
+        $this->app->singleton(TenantResolver::class, PathTenantResolver::class);
     }
 
     /**

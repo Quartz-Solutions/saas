@@ -35,5 +35,7 @@ class DatabaseSeeder extends Seeder
             User::factory()->count(max(1, $fakes - 3))->create();
             User::factory()->count(min(3, $fakes))->unverified()->create();
         }
+
+        $this->call(RolesSeeder::class);
     }
 }

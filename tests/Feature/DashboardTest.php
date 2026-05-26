@@ -16,12 +16,12 @@ class DashboardTest extends TestCase
         $response->assertRedirect(route('login'));
     }
 
-    public function test_authenticated_users_can_visit_the_dashboard()
+    public function test_authenticated_users_without_a_tenant_are_redirected_to_choose_one()
     {
         $user = User::factory()->create();
         $this->actingAs($user);
 
         $response = $this->get(route('dashboard'));
-        $response->assertOk();
+        $response->assertRedirect(route('account.tenants.index'));
     }
 }
