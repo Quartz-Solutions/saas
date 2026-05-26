@@ -2,6 +2,7 @@ import { Link, router, usePage } from '@inertiajs/react';
 import {
     Building2,
     ClipboardList,
+    Cog,
     Flag,
     LayoutGrid,
     LogOut,
@@ -17,6 +18,7 @@ import type { NavItem } from '@/types';
 import { dashboard as adminDashboard, stopImpersonating } from '@/routes/admin';
 import { index as auditIndex } from '@/routes/admin/audit';
 import { index as featureFlagsIndex } from '@/routes/admin/feature-flags';
+import { index as settingsIndex } from '@/routes/admin/settings';
 import { index as tenantsIndex } from '@/routes/admin/tenants';
 import { index as webhooksIndex } from '@/routes/admin/webhooks';
 
@@ -45,6 +47,11 @@ const sidebarNavItems: NavItem[] = [
         title: 'Feature flags',
         href: featureFlagsIndex(),
         icon: Flag,
+    },
+    {
+        title: 'Settings',
+        href: settingsIndex(),
+        icon: Cog,
     },
 ];
 

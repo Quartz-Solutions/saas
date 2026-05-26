@@ -3,6 +3,7 @@
 use App\Http\Controllers\Admin\AuditLogsController;
 use App\Http\Controllers\Admin\FeatureFlagOverridesController;
 use App\Http\Controllers\Admin\FeatureFlagsController;
+use App\Http\Controllers\Admin\SettingsController;
 use App\Http\Controllers\Admin\TenantsAdminController;
 use App\Http\Controllers\Admin\WebhookEventsController;
 use Illuminate\Support\Facades\Route;
@@ -55,6 +56,11 @@ Route::middleware(['auth', 'verified', 'admin.scope', 'role:Super Admin'])
             ->name('feature-flags.overrides.update');
         Route::delete('feature-flags/{feature_flag}/overrides/{override}', [FeatureFlagOverridesController::class, 'destroy'])
             ->name('feature-flags.overrides.destroy');
+
+        // App settings — Super Admin manages env-style runtime config.
+        Route::get('settings', [SettingsController::class, 'index'])->name('settings.index');
+        Route::patch('settings/{group}', [SettingsController::class, 'update'])->name('settings.update');
+        Route::post('settings/{group}/test', [SettingsController::class, 'test'])->name('settings.test');
     });
 
 // Stop impersonation — gated only on `auth`. The current request's auth user
