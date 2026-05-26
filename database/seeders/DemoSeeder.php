@@ -12,88 +12,44 @@ use App\Models\TenantInvitation;
 use App\Models\User;
 use App\Support\Tenancy\TenantService;
 use Illuminate\Database\Seeder;
-use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 
 /**
- * Demo seeder — call explicitly with `php artisan db:seed --class=DemoSeeder`.
+ * Demo data on top of UserSeeder — call explicitly:
  *
- * Creates the canonical "Acme Corp" tenant + three users with the per-team
- * roles (Owner / Admin / Member) so a freshly-cloned boilerplate has a usable
- * dataset to log in to. Idempotent — re-runs without dupes.
+ *   php artisan db:seed --class=DemoSeeder
+ *
+ * UserSeeder creates the test users + the Acme tenant + role wiring. This
+ * seeder adds: onboarded marker, owner's current_tenant_id, Pro plan +
+ * subscription, three paid invoices + payments, one open invitation, and a
+ * few login-history rows so the security page has something to show.
+ * Idempotent — re-runs without dupes.
  */
 class DemoSeeder extends Seeder
 {
     public function run(): void
     {
-        // Currencies (Currency table is referenced by tenants + plans).
-        $this->call(CurrencySeeder::class);
+        // Guarantee users + Acme tenant + role assignments exist.
+        $this->call(UserSeeder::class);
 
         /** @var TenantService $service */
         $service = app(TenantService::class);
 
-        $owner = User::firstOrCreate(
-            ['email' => 'owner@acme.test'],
-            [
-                'name' => 'Olivia Owner',
-                'password' => Hash::make('password'),
-                'email_verified_at' => now(),
-            ],
-        );
+        $owner = User::query()->where('email', 'owner@acme.test')->firstOrFail();
+        $tenant = Tenant::query()->where('slug', 'acme')->firstOrFail();
 
-        $admin = User::firstOrCreate(
-            ['email' => 'admin@acme.test'],
-            [
-                'name' => 'Adam Admin',
-                'password' => Hash::make('password'),
-                'email_verified_at' => now(),
-            ],
-        );
-
-        $member = User::firstOrCreate(
-            ['email' => 'member@acme.test'],
-            [
-                'name' => 'Marta Member',
-                'password' => Hash::make('password'),
-                'email_verified_at' => now(),
-            ],
-        );
-
-        $tenant = Tenant::query()->where('slug', 'acme')->first();
-
-        if ($tenant === null) {
-            $tenant = $service->create($owner, [
-                'name' => 'Acme Corp',
-                'slug' => 'acme',
-                'locale' => 'en',
-                'timezone' => 'UTC',
-                'currency' => 'USD',
-                'settings' => [
-                    'onboarded_at' => now()->toIso8601String(),
-                    'logo_placeholder' => true,
-                ],
-            ]);
-        } else {
-            // Mark as onboarded if not already.
-            $settings = is_array($tenant->settings) ? $tenant->settings : [];
-            if (! array_key_exists('onboarded_at', $settings)) {
-                $settings['onboarded_at'] = now()->toIso8601String();
-                $service->update($tenant, ['settings' => $settings]);
-                $tenant = $tenant->fresh();
-            }
+        // Mark as onboarded if not already, and set owner's current tenant.
+        $settings = is_array($tenant->settings) ? $tenant->settings : [];
+        if (! array_key_exists('onboarded_at', $settings)) {
+            $settings['onboarded_at'] = now()->toIso8601String();
+            $settings['logo_placeholder'] = true;
+            $service->update($tenant, ['settings' => $settings]);
+            $tenant = $tenant->fresh();
         }
 
-        // Attach admin + member if not already members.
-        if (! $tenant->members()->whereKey($admin->id)->exists()) {
-            $service->invite($tenant, $owner, 'admin@acme.test', 'Admin');
+        if ($owner->current_tenant_id !== $tenant->id) {
+            $owner->forceFill(['current_tenant_id' => $tenant->id])->save();
         }
-
-        if (! $tenant->members()->whereKey($member->id)->exists()) {
-            $service->invite($tenant, $owner, 'member@acme.test', 'Member');
-        }
-
-        // Set the owner's "current tenant" for nicer first-login UX.
-        $owner->forceFill(['current_tenant_id' => $tenant->id])->save();
 
         // Sample subscription on a Pro plan.
         $plan = Plan::firstOrCreate(
@@ -124,8 +80,9 @@ class DemoSeeder extends Seeder
         }
 
         // 3 paid invoices + matching payments.
-        if (Invoice::query()->where('tenant_id', $tenant->id)->count() < 3) {
-            $needed = 3 - Invoice::query()->where('tenant_id', $tenant->id)->count();
+        $existing = Invoice::query()->where('tenant_id', $tenant->id)->count();
+        if ($existing < 3) {
+            $needed = 3 - $existing;
             foreach (range(1, $needed) as $i) {
                 $invoice = Invoice::factory()->create([
                     'tenant_id' => $tenant->id,
@@ -149,14 +106,14 @@ class DemoSeeder extends Seeder
         }
 
         // One open invitation to demo the invitations table.
-        if (
-            ! TenantInvitation::query()
-                ->where('tenant_id', $tenant->id)
-                ->where('email', 'pending@acme.test')
-                ->whereNull('accepted_at')
-                ->whereNull('revoked_at')
-                ->exists()
-        ) {
+        $hasPending = TenantInvitation::query()
+            ->where('tenant_id', $tenant->id)
+            ->where('email', 'pending@acme.test')
+            ->whereNull('accepted_at')
+            ->whereNull('revoked_at')
+            ->exists();
+
+        if (! $hasPending) {
             $service->invite(
                 $tenant,
                 $owner,
@@ -180,6 +137,6 @@ class DemoSeeder extends Seeder
             }
         }
 
-        $this->command?->info('Demo data seeded: tenant "Acme Corp" with 3 users (owner/admin/member@acme.test, password: password).');
+        $this->command?->info('DemoSeeder: Acme Corp tenant + subscription + 3 paid invoices + 1 open invitation seeded.');
     }
 }
