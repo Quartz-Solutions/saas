@@ -2,22 +2,78 @@
 
 /*
 |--------------------------------------------------------------------------
-| Billing Configuration (Phase 7 stub)
+| Billing Configuration (Phase 3 — Stripe core)
 |--------------------------------------------------------------------------
 |
-| This stub powers the public pricing page (resources/js/pages/marketing/pricing.tsx).
-| Phase 3 (Billing) will replace this with the full driver-registry config —
-| gateway enable flags, per-region defaults, trial length, etc.
+| Single source of truth for plans, gateways, trial length. The driver
+| registry (App\Support\Billing\GatewayRegistry) reads `gateways.*.enabled`
+| at boot in AppServiceProvider::register() — flipping a flag here is the
+| only thing required to disable a gateway.
 |
-| All monetary values are integer cents — boilerplate convention (CLAUDE.md).
+| All monetary values are integer cents — boilerplate convention.
 |
 */
 
 return [
 
+    /*
+    |---------------------------------------------------------------------
+    | Defaults
+    |---------------------------------------------------------------------
+    */
+
     'default_currency' => env('BILLING_DEFAULT_CURRENCY', 'USD'),
 
-    'trial_days' => 14,
+    'default_gateway' => env('BILLING_DEFAULT_GATEWAY', 'stripe'),
+
+    'trial_days' => (int) env('BILLING_TRIAL_DAYS', 14),
+
+    /*
+    |---------------------------------------------------------------------
+    | Dunning (failed-payment retry backoff in days)
+    |---------------------------------------------------------------------
+    | After max_attempts failed retries the subscription is moved from
+    | past_due to cancelled.
+    */
+
+    'dunning' => [
+        'backoff_days' => [1, 3, 7],
+        'max_attempts' => 3,
+    ],
+
+    /*
+    |---------------------------------------------------------------------
+    | Gateways
+    |---------------------------------------------------------------------
+    | Phase 3.1 ships Stripe only. PayPal + regional gateways
+    | (Paymob, Fawry, PayTabs, Geidea, Telr, HyperPay, MyFatoorah,
+    | HitPay, Billplz, iPay88) ship in later phases.
+    */
+
+    'gateways' => [
+
+        'stripe' => [
+            'enabled' => filled(env('STRIPE_SECRET')),
+            'public_key' => env('STRIPE_KEY'),
+            'secret' => env('STRIPE_SECRET'),
+            'webhook_secret' => env('STRIPE_WEBHOOK_SECRET'),
+            'webhook_tolerance_seconds' => (int) env('STRIPE_WEBHOOK_TOLERANCE', 300),
+            'api_version' => env('STRIPE_API_VERSION', '2024-11-20.acacia'),
+            'portal_return_path' => env('STRIPE_PORTAL_RETURN_PATH', '/'),
+            'checkout_success_path' => env('STRIPE_CHECKOUT_SUCCESS_PATH', '/'),
+            'checkout_cancel_path' => env('STRIPE_CHECKOUT_CANCEL_PATH', '/'),
+        ],
+
+    ],
+
+    /*
+    |---------------------------------------------------------------------
+    | Plans
+    |---------------------------------------------------------------------
+    | Source of truth for the plan picker UI and the public pricing page.
+    | The Stripe price ids in `gateway_prices.stripe` are looked up at
+    | runtime by StripeGateway::createSubscription().
+    */
 
     'plans' => [
 
@@ -36,6 +92,9 @@ return [
             ],
             'cta' => 'Start free',
             'highlighted' => false,
+            'gateway_prices' => [
+                'stripe' => null,
+            ],
         ],
 
         'pro' => [
@@ -55,6 +114,9 @@ return [
             ],
             'cta' => 'Start 14-day trial',
             'highlighted' => true,
+            'gateway_prices' => [
+                'stripe' => env('STRIPE_PRICE_PRO'),
+            ],
         ],
 
         'enterprise' => [
@@ -74,6 +136,9 @@ return [
             ],
             'cta' => 'Contact sales',
             'highlighted' => false,
+            'gateway_prices' => [
+                'stripe' => env('STRIPE_PRICE_ENTERPRISE'),
+            ],
         ],
 
     ],

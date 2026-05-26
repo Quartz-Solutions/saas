@@ -24,6 +24,13 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->encryptCookies(except: ['appearance', 'sidebar_state']);
 
+        // Gateway webhooks are signed at the application layer
+        // (gateway-specific HMAC) — CSRF tokens are meaningless for
+        // server-to-server POSTs.
+        $middleware->validateCsrfTokens(except: [
+            'webhooks/*',
+        ]);
+
         $middleware->web(append: [
             HandleAppearance::class,
             HandleInertiaRequests::class,

@@ -3,6 +3,9 @@
 use App\Http\Controllers\API\UserSearchController;
 use App\Http\Controllers\Auth\MagicLinkController;
 use App\Http\Controllers\Auth\SocialController;
+use App\Http\Controllers\Billing\BillingController;
+use App\Http\Controllers\Billing\InvoicesController;
+use App\Http\Controllers\Billing\WebhookController;
 use App\Http\Controllers\Tenants\TenantInvitationsController;
 use App\Http\Controllers\Tenants\TenantOnboardingController;
 use App\Http\Controllers\Tenants\TenantsController;
@@ -12,6 +15,15 @@ use App\Http\Controllers\Webhooks\WebhooksController;
 use Illuminate\Support\Facades\Route;
 
 require __DIR__.'/marketing.php';
+
+/*
+|---------------------------------------------------------------------------
+| Webhooks — public, CSRF-exempt (see bootstrap/app.php).
+|---------------------------------------------------------------------------
+*/
+Route::post('webhooks/{gateway}', WebhookController::class)
+    ->where('gateway', '[a-z0-9_-]+')
+    ->name('webhooks.gateway');
 
 // Magic-link login (passwordless).
 Route::middleware('guest')->group(function () {
@@ -120,6 +132,21 @@ Route::middleware(['auth', 'verified', 'tenant', 'tenant.member'])
         Route::post('settings/webhooks/{webhook}/test-fire', [WebhooksController::class, 'testFire'])
             ->whereNumber('webhook')
             ->name('webhooks.test-fire');
+
+        Route::get('billing/plans', [BillingController::class, 'plans'])
+            ->name('billing.plans');
+        Route::post('billing/subscribe', [BillingController::class, 'subscribe'])
+            ->name('billing.subscribe');
+        Route::post('billing/cancel', [BillingController::class, 'cancel'])
+            ->name('billing.cancel');
+        Route::post('billing/resume', [BillingController::class, 'resume'])
+            ->name('billing.resume');
+        Route::get('billing/portal', [BillingController::class, 'portal'])
+            ->name('billing.portal');
+        Route::get('billing/invoices', [InvoicesController::class, 'index'])
+            ->name('billing.invoices.index');
+        Route::get('billing/invoices/{invoice}/pdf', [InvoicesController::class, 'pdf'])
+            ->name('billing.invoices.pdf');
     });
 
 // Convenience: /dashboard redirects to the user's current tenant dashboard
