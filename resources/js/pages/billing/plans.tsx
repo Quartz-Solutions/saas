@@ -201,14 +201,14 @@ export default function BillingPlans({ plans, subscription, gateways, default_ga
                             </CardContent>
                             <CardFooter>
                                 <Form
-                                    {...BillingController.subscribe.form({ tenantSlug })}
+                                    action="/checkout/start"
+                                    method="post"
                                     options={{ preserveScroll: true }}
                                     className="w-full"
                                 >
                                     {({ processing }) => (
                                         <>
-                                            <input type="hidden" name="plan" value={plan.slug} />
-                                            <input type="hidden" name="gateway" value={default_gateway} />
+                                            <input type="hidden" name="plan_slug" value={plan.slug} />
                                             <Button
                                                 type="submit"
                                                 variant={plan.highlighted ? 'default' : 'outline'}

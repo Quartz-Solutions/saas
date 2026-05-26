@@ -1,5 +1,6 @@
 <?php
 
+use App\Jobs\ExpireStaleCheckouts;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
@@ -22,3 +23,15 @@ Schedule::exec(base_path('docker/scripts/backup-db.sh'))
     ->onOneServer()
     ->name('db-backup')
     ->description('Daily Postgres dump -> S3 (or storage/backups/ when BACKUP_BUCKET is unset).');
+
+/*
+|--------------------------------------------------------------------------
+| Expire stale checkout sessions
+|--------------------------------------------------------------------------
+| Marks any pending/awaiting_payment CheckoutSession past its expires_at
+| as expired + fires CheckoutAbandoned. See agent-os/product/checkout.md §7.
+*/
+Schedule::job(new ExpireStaleCheckouts)
+    ->everyFiveMinutes()
+    ->onOneServer()
+    ->name('expire-stale-checkouts');

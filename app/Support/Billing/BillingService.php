@@ -2,6 +2,7 @@
 
 namespace App\Support\Billing;
 
+use App\Models\CheckoutSession;
 use App\Models\Currency;
 use App\Models\Invoice;
 use App\Models\Payment;
@@ -292,6 +293,185 @@ class BillingService
                 'source' => 'admin_manual',
             ],
         ]);
+    }
+
+    /**
+     * Create or find the Subscription row that corresponds to a completed
+     * CheckoutSession. Driver-agnostic: the driver passes gateway-specific
+     * fields through $payload (gateway_subscription_id, period dates, etc.)
+     * and BillingService handles the persistence.
+     *
+     * Idempotent on (gateway, gateway_subscription_id) — re-delivery of the
+     * webhook returns the same row.
+     *
+     * @param  array<string, mixed>  $payload
+     */
+    public function subscriptionFromCheckout(CheckoutSession $session, array $payload): Subscription
+    {
+        return DB::transaction(function () use ($session, $payload) {
+            $gatewaySubId = $payload['gateway_subscription_id'] ?? null;
+
+            // Dedupe: customer.subscription.created may have created the row
+            // before this handler ran.
+            if (filled($gatewaySubId)) {
+                $existing = Subscription::query()
+                    ->where('gateway', $session->gateway)
+                    ->where('gateway_subscription_id', $gatewaySubId)
+                    ->first();
+                if ($existing !== null) {
+                    // Backfill the checkout_session_id link if missing.
+                    if ($existing->checkout_session_id !== $session->id) {
+                        $existing->forceFill(['checkout_session_id' => $session->id])->save();
+                    }
+
+                    return $existing->fresh();
+                }
+            }
+
+            $subscription = new Subscription;
+            $subscription->forceFill([
+                'tenant_id' => $session->tenant_id,
+                'plan_id' => $session->plan_id,
+                'checkout_session_id' => $session->id,
+                'gateway' => $session->gateway,
+                'gateway_subscription_id' => $gatewaySubId,
+                'status' => $payload['status'] ?? 'active',
+                'currency' => $session->currency,
+                'unit_amount_cents' => (int) ($payload['unit_amount_cents'] ?? $session->amount_cents),
+                'quantity' => (int) ($payload['quantity'] ?? 1),
+                'trial_starts_at' => $payload['trial_starts_at'] ?? null,
+                'trial_ends_at' => $payload['trial_ends_at'] ?? null,
+                'current_period_start' => $payload['current_period_start'] ?? now(),
+                'current_period_end' => $payload['current_period_end'] ?? now()->addMonth(),
+                'cancel_at_period_end' => (bool) ($payload['cancel_at_period_end'] ?? false),
+                'metadata' => $payload['metadata'] ?? [],
+            ])->save();
+
+            return $subscription->fresh();
+        });
+    }
+
+    /**
+     * Create the first invoice tied to a completed CheckoutSession.
+     * Idempotent — re-delivery finds the existing row by checkout_session_id.
+     *
+     * @param  array<string, mixed>  $payload
+     */
+    public function invoiceFromCheckout(CheckoutSession $session, array $payload, Subscription $subscription): Invoice
+    {
+        return DB::transaction(function () use ($session, $payload, $subscription) {
+            $gatewayInvoiceId = $payload['gateway_invoice_id'] ?? null;
+
+            // Dedupe via either: we've already created the invoice for this
+            // session, OR the related invoice.paid / invoice.finalized handler
+            // ran first and created it via gateway_invoice_id.
+            $existing = Invoice::query()
+                ->where(function ($q) use ($session, $gatewayInvoiceId) {
+                    $q->where('checkout_session_id', $session->id);
+                    if (filled($gatewayInvoiceId)) {
+                        $q->orWhere(function ($q2) use ($session, $gatewayInvoiceId) {
+                            $q2->where('gateway', $session->gateway)
+                                ->where('gateway_invoice_id', $gatewayInvoiceId);
+                        });
+                    }
+                })
+                ->first();
+
+            if ($existing !== null) {
+                // Backfill cross-links if the other handler set them up first.
+                $patch = [];
+                if ($existing->checkout_session_id !== $session->id) {
+                    $patch['checkout_session_id'] = $session->id;
+                }
+                if (! $existing->subscription_id && $subscription->id) {
+                    $patch['subscription_id'] = $subscription->id;
+                }
+                if ($patch !== []) {
+                    $existing->forceFill($patch)->save();
+                }
+
+                return $existing->fresh();
+            }
+
+            Currency::firstOrCreate(
+                ['code' => $session->currency],
+                ['name' => $session->currency, 'symbol' => $session->currency, 'decimal_places' => 2],
+            );
+
+            $invoice = new Invoice;
+            $invoice->forceFill([
+                'tenant_id' => $session->tenant_id,
+                'subscription_id' => $subscription->id,
+                'checkout_session_id' => $session->id,
+                'gateway' => $session->gateway,
+                'gateway_invoice_id' => $payload['gateway_invoice_id'] ?? null,
+                'number' => $payload['invoice_number'] ?? 'INV-'.$session->public_id,
+                'status' => $payload['invoice_status'] ?? 'paid',
+                'currency' => $session->currency,
+                'subtotal_cents' => (int) ($payload['subtotal_cents'] ?? $session->amount_cents),
+                'discount_cents' => (int) ($payload['discount_cents'] ?? 0),
+                'tax_cents' => (int) ($payload['tax_cents'] ?? 0),
+                'total_cents' => (int) ($payload['total_cents'] ?? $session->amount_cents),
+                'amount_paid_cents' => (int) ($payload['amount_paid_cents'] ?? $session->amount_cents),
+                'amount_due_cents' => (int) ($payload['amount_due_cents'] ?? 0),
+                'issued_at' => $payload['issued_at'] ?? now(),
+                'paid_at' => $payload['paid_at'] ?? now(),
+                'metadata' => $payload['invoice_metadata'] ?? [],
+            ])->save();
+
+            return $invoice->fresh();
+        });
+    }
+
+    /**
+     * Create the Payment row that settled the first invoice from a checkout.
+     * Idempotent on (gateway, gateway_payment_id) — re-delivery is a no-op.
+     *
+     * @param  array<string, mixed>  $payload
+     */
+    public function paymentFromCheckout(CheckoutSession $session, array $payload, Invoice $invoice): Payment
+    {
+        return DB::transaction(function () use ($session, $payload, $invoice) {
+            $gatewayPaymentId = $payload['gateway_payment_id'] ?? null;
+
+            // Dedupe by gateway_payment_id (e.g. payment_intent.succeeded
+            // may have created the row first).
+            if (filled($gatewayPaymentId)) {
+                $existing = Payment::query()
+                    ->where('gateway', $session->gateway)
+                    ->where('gateway_payment_id', $gatewayPaymentId)
+                    ->first();
+                if ($existing !== null) {
+                    return $existing;
+                }
+            }
+
+            // Also dedupe by invoice — every invoice should have at most one
+            // settling payment row from checkout (refunds spawn separate rows).
+            $existingByInvoice = Payment::query()
+                ->where('invoice_id', $invoice->id)
+                ->where('status', 'succeeded')
+                ->first();
+            if ($existingByInvoice !== null) {
+                return $existingByInvoice;
+            }
+
+            $payment = new Payment;
+            $payment->forceFill([
+                'tenant_id' => $session->tenant_id,
+                'invoice_id' => $invoice->id,
+                'gateway' => $session->gateway,
+                'gateway_payment_id' => $gatewayPaymentId ?? 'cs-'.$session->public_id,
+                'status' => $payload['payment_status'] ?? 'succeeded',
+                'amount_cents' => (int) ($payload['paid_amount_cents'] ?? $session->amount_cents),
+                'currency' => $session->currency,
+                'captured_at' => $payload['captured_at'] ?? now(),
+                'idempotency_key' => $payload['idempotency_key'] ?? $session->public_id,
+                'metadata' => $payload['payment_metadata'] ?? [],
+            ])->save();
+
+            return $payment->fresh();
+        });
     }
 
     /**

@@ -6,6 +6,7 @@ use App\Http\Controllers\Auth\SocialController;
 use App\Http\Controllers\Billing\BillingController;
 use App\Http\Controllers\Billing\InvoicesController;
 use App\Http\Controllers\Billing\WebhookController;
+use App\Http\Controllers\Checkout\CheckoutController;
 use App\Http\Controllers\Onboarding\GetStartedController;
 use App\Http\Controllers\Tenants\TenantInvitationsController;
 use App\Http\Controllers\Tenants\TenantOnboardingController;
@@ -60,6 +61,37 @@ Route::middleware('guest')->group(function () {
 Route::middleware(['auth'])
     ->get('onboarding/{tenantSlug}/return', [GetStartedController::class, 'return'])
     ->name('onboarding.return');
+
+/*
+|---------------------------------------------------------------------------
+| Polymorphic checkout
+|---------------------------------------------------------------------------
+| Single funnel for all plan-buy actions. See agent-os/product/checkout.md.
+*/
+Route::middleware(['auth'])->group(function () {
+    Route::post('checkout/start', [CheckoutController::class, 'start'])
+        ->name('checkout.start');
+
+    Route::get('checkout/{session}', [CheckoutController::class, 'show'])
+        ->where('session', '[0-9A-HJKMNP-TV-Z]{26}')
+        ->name('checkout.show');
+
+    Route::post('checkout/{session}/pay', [CheckoutController::class, 'pay'])
+        ->where('session', '[0-9A-HJKMNP-TV-Z]{26}')
+        ->name('checkout.pay');
+
+    Route::get('checkout/{session}/return', [CheckoutController::class, 'return'])
+        ->where('session', '[0-9A-HJKMNP-TV-Z]{26}')
+        ->name('checkout.return');
+
+    Route::get('checkout/{session}/status', [CheckoutController::class, 'status'])
+        ->where('session', '[0-9A-HJKMNP-TV-Z]{26}')
+        ->name('checkout.status');
+
+    Route::post('checkout/{session}/cancel', [CheckoutController::class, 'cancel'])
+        ->where('session', '[0-9A-HJKMNP-TV-Z]{26}')
+        ->name('checkout.cancel');
+});
 
 /*
 |---------------------------------------------------------------------------

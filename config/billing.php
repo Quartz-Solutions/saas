@@ -43,6 +43,18 @@ return [
 
     /*
     |---------------------------------------------------------------------
+    | Checkout
+    |---------------------------------------------------------------------
+    | Lifetime of a CheckoutSession before it's marked expired by the
+    | ExpireStaleCheckouts sweep job (registered in routes/console.php).
+    */
+
+    'checkout' => [
+        'timeout_minutes' => (int) env('CHECKOUT_TIMEOUT_MINUTES', 30),
+    ],
+
+    /*
+    |---------------------------------------------------------------------
     | Gateways
     |---------------------------------------------------------------------
     | Catalog + runtime config for every payment gateway. Admin manages

@@ -5,22 +5,19 @@ namespace App\Http\Controllers\Onboarding;
 use App\Actions\Fortify\CreateNewUser;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Onboarding\GetStartedRequest;
+use App\Models\CheckoutSession;
 use App\Models\Plan;
 use App\Models\Tenant;
 use App\Models\User;
-use App\Support\Billing\BillingService;
-use App\Support\Billing\GatewayRegistry;
-use App\Support\Billing\Stripe\StripeGateway;
+use App\Support\Billing\Checkout\CheckoutService;
 use App\Support\Tenancy\TenantService;
 use Illuminate\Auth\Events\Registered;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
-use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 use Inertia\Response;
-use Throwable;
 
 /**
  * One-shot sign-up: creates the User + Tenant + (free or pending paid)
@@ -37,8 +34,7 @@ class GetStartedController extends Controller
 {
     public function __construct(
         private readonly TenantService $tenants,
-        private readonly BillingService $billing,
-        private readonly GatewayRegistry $registry,
+        private readonly CheckoutService $checkout,
         private readonly CreateNewUser $createUser,
     ) {}
 
@@ -67,11 +63,6 @@ class GetStartedController extends Controller
 
         return Inertia::render('onboarding/get-started', [
             'plans' => $plans,
-            'gateways' => collect($this->registry->all())
-                ->map(fn ($g) => ['id' => $g->id(), 'name' => $g->displayName()])
-                ->values()
-                ->all(),
-            'defaultGateway' => (string) config('billing.default_gateway', 'stripe'),
         ]);
     }
 
@@ -79,60 +70,26 @@ class GetStartedController extends Controller
     {
         $data = $request->validated();
         $plan = Plan::query()->where('slug', $data['plan_slug'])->firstOrFail();
-        $gatewayId = $data['gateway'] ?? (string) config('billing.default_gateway', 'stripe');
 
-        // Free plan path: create user + tenant + free Subscription in one tx,
-        // log in, land on dashboard. No gateway round-trip.
-        if ((int) $plan->price_cents === 0) {
-            [$tenant] = $this->createUserAndTenant($data);
-            $this->billing->subscribeToPlan($tenant, $plan, $gatewayId);
+        // Create User + Tenant in one transaction, log the user in.
+        [$tenant, $user] = $this->createUserAndTenant($data);
+
+        // Delegate to the polymorphic checkout flow. CheckoutService::start
+        // handles the free-plan fast-path internally (marks the session
+        // completed + creates a free Subscription synchronously).
+        $session = $this->checkout->start($user, $tenant, $plan);
+
+        if ($session->status === CheckoutSession::STATUS_COMPLETED) {
+            Inertia::flash('toast', [
+                'type' => 'success',
+                'message' => __('Welcome to :app!', ['app' => config('app.name')]),
+            ]);
 
             return redirect()->route('tenants.dashboard', ['tenantSlug' => $tenant->slug]);
         }
 
-        // Paid plan path. Stripe gets a Checkout Session redirect; other
-        // gateways fall back to their own hosted page (returned via the
-        // driver's createSubscription metadata) where wired.
-        [$tenant, $user] = $this->createUserAndTenant($data);
-
-        if ($gatewayId === 'stripe') {
-            $stripe = $this->registry->find('stripe');
-            if (! $stripe instanceof StripeGateway) {
-                return $this->bailToBilling($tenant, __('Stripe is not configured. Pick a plan from your billing page.'));
-            }
-
-            try {
-                $url = $stripe->checkoutSessionUrl(
-                    $tenant,
-                    $plan,
-                    successUrl: route('onboarding.return', ['tenantSlug' => $tenant->slug]),
-                    cancelUrl: route('tenants.billing.plans', ['tenantSlug' => $tenant->slug]),
-                );
-            } catch (Throwable $e) {
-                Log::warning('Stripe Checkout session failed during sign-up', ['error' => $e->getMessage()]);
-
-                return $this->bailToBilling($tenant, __('Could not start checkout. Try again from the billing page.'));
-            }
-
-            return redirect()->away($url);
-        }
-
-        // Non-Stripe gateway: call the driver's createSubscription and follow
-        // metadata.redirect_url if present, otherwise land on the billing page.
-        try {
-            $sub = $this->billing->subscribeToPlan($tenant, $plan, $gatewayId);
-            $redirect = $sub->metadata['redirect_url'] ?? $sub->metadata['approve_url'] ?? null;
-            if ($redirect !== null) {
-                return redirect()->away((string) $redirect);
-            }
-        } catch (Throwable $e) {
-            Log::warning('Non-Stripe gateway subscribe failed during sign-up', [
-                'gateway' => $gatewayId,
-                'error' => $e->getMessage(),
-            ]);
-        }
-
-        return $this->bailToBilling($tenant, __('Continue from your billing page to finish checkout.'));
+        // Paid plan → hand off to /checkout/{session} for gateway picking.
+        return redirect()->route('checkout.show', ['session' => $session->public_id]);
     }
 
     /**
@@ -184,12 +141,5 @@ class GetStartedController extends Controller
 
             return [$tenant, $user];
         });
-    }
-
-    protected function bailToBilling(Tenant $tenant, string $message): RedirectResponse
-    {
-        Inertia::flash('toast', ['type' => 'info', 'message' => $message]);
-
-        return redirect()->route('tenants.billing.plans', ['tenantSlug' => $tenant->slug]);
     }
 }

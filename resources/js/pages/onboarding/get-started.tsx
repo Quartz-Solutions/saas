@@ -34,12 +34,8 @@ type Plan = {
     features: string[];
 };
 
-type Gateway = { id: string; name: string };
-
 type Props = {
     plans: Plan[];
-    gateways: Gateway[];
-    defaultGateway: string;
 };
 
 const formatMoney = (cents: number, currency: string) => {
@@ -50,7 +46,7 @@ const formatMoney = (cents: number, currency: string) => {
     }
 };
 
-export default function GetStarted({ plans, gateways, defaultGateway }: Props) {
+export default function GetStarted({ plans }: Props) {
     const initialPlan = plans.find((p) => p.price_cents > 0) ?? plans[0];
     const [selectedPlan, setSelectedPlan] = useState<string>(initialPlan?.slug ?? '');
 
@@ -62,7 +58,6 @@ export default function GetStarted({ plans, gateways, defaultGateway }: Props) {
         tenant_name: '',
         tenant_slug: '',
         plan_slug: selectedPlan,
-        gateway: defaultGateway,
     });
 
     const pickPlan = (slug: string) => {
@@ -191,34 +186,8 @@ export default function GetStarted({ plans, gateways, defaultGateway }: Props) {
                             </CardContent>
                         </Card>
 
-                        {isPaid && gateways.length > 1 ? (
-                            <Card>
-                                <CardHeader>
-                                    <CardTitle className="text-base">3. Payment method</CardTitle>
-                                    <CardDescription>
-                                        Pick the gateway you want to pay with.
-                                    </CardDescription>
-                                </CardHeader>
-                                <CardContent>
-                                    <Select
-                                        value={data.gateway}
-                                        onValueChange={(v) => setData('gateway', v)}
-                                    >
-                                        <SelectTrigger className="w-full">
-                                            <SelectValue />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                            {gateways.map((g) => (
-                                                <SelectItem key={g.id} value={g.id}>
-                                                    {g.name}
-                                                </SelectItem>
-                                            ))}
-                                        </SelectContent>
-                                    </Select>
-                                    <InputError message={errors.gateway} />
-                                </CardContent>
-                            </Card>
-                        ) : null}
+                        {/* Gateway picker happens on /checkout/{session} after this form submits.
+                            Paid plans land there; free plans skip checkout entirely. */}
                     </div>
 
                     <div className="space-y-6">

@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Onboarding;
 
+use App\Models\CheckoutSession;
 use App\Models\Subscription;
 use App\Models\Tenant;
 use App\Models\User;
@@ -78,11 +79,9 @@ class GetStartedTest extends TestCase
             ->assertSessionHasErrors(['name', 'email', 'password', 'tenant_name', 'plan_slug']);
     }
 
-    public function test_paid_plan_with_stripe_disabled_falls_back_to_billing_page(): void
+    public function test_paid_plan_creates_pending_checkout_session(): void
     {
         $this->seed(PlansSeeder::class);
-        // Stripe disabled by default (no secret in test env).
-        config(['billing.gateways.stripe.enabled' => false]);
 
         $response = $this->post('/get-started', [
             'name' => 'Olivia',
@@ -91,17 +90,24 @@ class GetStartedTest extends TestCase
             'password_confirmation' => 'Sup3r-Strong-P@ss!',
             'tenant_name' => 'Olivia Co',
             'plan_slug' => 'pro',
-            'gateway' => 'stripe',
         ]);
 
         $tenant = Tenant::query()->where('slug', 'olivia-co')->firstOrFail();
-        // User + tenant get created, then we bail to /t/{slug}/billing/plans
-        // with a flashed message because Stripe wasn't configured.
-        $response->assertRedirect(route('tenants.billing.plans', ['tenantSlug' => $tenant->slug]));
+        $user = User::query()->where('email', 'olivia@example.test')->firstOrFail();
 
-        $this->assertDatabaseHas('users', ['email' => 'olivia@example.test']);
-        $this->assertDatabaseHas('tenants', ['slug' => 'olivia-co']);
-        // No paid subscription yet — checkout never happened.
+        // /get-started for a paid plan creates a pending CheckoutSession and
+        // redirects to /checkout/{public_id} where the user picks a gateway.
+        $session = CheckoutSession::query()
+            ->where('user_id', $user->id)
+            ->latest('id')
+            ->firstOrFail();
+
+        $response->assertRedirect('/checkout/'.$session->public_id);
+        $this->assertSame(CheckoutSession::STATUS_PENDING, $session->status);
+        $this->assertSame($tenant->id, $session->tenant_id);
+        $this->assertSame(2900, $session->amount_cents);
+
+        // No Subscription yet — gateway hasn't been picked + paid.
         $this->assertDatabaseMissing('subscriptions', [
             'tenant_id' => $tenant->id,
             'status' => 'active',

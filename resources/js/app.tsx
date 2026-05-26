@@ -22,6 +22,8 @@ createInertiaApp({
                 return PublicLayout;
             case name.startsWith('onboarding/'):
                 return PublicLayout;
+            case name.startsWith('checkout/'):
+                return PublicLayout;
             case name.startsWith('settings/'):
                 return [AppLayout, SettingsLayout];
             case name.startsWith('admin/'):

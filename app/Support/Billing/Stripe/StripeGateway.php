@@ -3,6 +3,7 @@
 namespace App\Support\Billing\Stripe;
 
 use App\Jobs\RetryFailedPayment;
+use App\Models\CheckoutSession;
 use App\Models\GatewayCustomer;
 use App\Models\Invoice;
 use App\Models\Payment;
@@ -10,10 +11,15 @@ use App\Models\Plan;
 use App\Models\Subscription;
 use App\Models\Tenant;
 use App\Models\WebhookEvent;
+use App\Support\Billing\Checkout\CheckoutResult;
+use App\Support\Billing\Checkout\CheckoutService;
+use App\Support\Billing\Checkout\RedirectCheckout;
+use App\Support\Billing\CheckoutGateway;
 use App\Support\Billing\PaymentGateway;
 use App\Support\Billing\SubscriptionGateway;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
@@ -33,7 +39,7 @@ use Throwable;
  * The Stripe SDK client is injected so tests can swap it for a mock via
  * the container (singleton key: StripeClient::class).
  */
-class StripeGateway implements PaymentGateway, SubscriptionGateway
+class StripeGateway implements CheckoutGateway, PaymentGateway, SubscriptionGateway
 {
     public function __construct(
         private readonly StripeClient $client,
@@ -49,6 +55,111 @@ class StripeGateway implements PaymentGateway, SubscriptionGateway
     public function displayName(): string
     {
         return 'Stripe';
+    }
+
+    // ------------------------------------------------------------------
+    // CheckoutGateway
+    // ------------------------------------------------------------------
+
+    /**
+     * Supported settlement currencies per Stripe's published list. Used by
+     * /checkout's gateway picker to filter out incompatible plans.
+     *
+     * @return array<int, string>
+     */
+    public function supportedCurrencies(): array
+    {
+        return [
+            'USD', 'AUD', 'BRL', 'CAD', 'CHF', 'CZK', 'DKK', 'EUR', 'GBP',
+            'HKD', 'HUF', 'ILS', 'INR', 'JPY', 'MXN', 'MYR', 'NOK', 'NZD',
+            'PHP', 'PLN', 'SEK', 'SGD', 'THB', 'TWD',
+        ];
+    }
+
+    public function supportsSubscriptions(): bool
+    {
+        return true;
+    }
+
+    /**
+     * Create a Stripe Checkout Session for the given CheckoutSession and
+     * return a RedirectCheckout pointing at the hosted page. Idempotent:
+     * if the session already has a `gateway_session_id`, re-fetch + reuse
+     * the existing Stripe session rather than creating a duplicate.
+     */
+    public function initiateCheckout(CheckoutSession $session): CheckoutResult
+    {
+        if ($session->gateway_session_id !== null) {
+            // Re-resolve the existing Stripe Checkout Session (idempotent re-call).
+            $existing = $this->client->checkout->sessions->retrieve($session->gateway_session_id);
+            if (in_array($existing->status, ['open', 'complete'], true) && filled($existing->url)) {
+                return new RedirectCheckout(
+                    gatewaySessionId: (string) $existing->id,
+                    url: (string) $existing->url,
+                    expiresAt: $existing->expires_at,
+                );
+            }
+            // Otherwise fall through and create a fresh one.
+        }
+
+        $plan = $session->plan;
+        if ($plan === null) {
+            throw new RuntimeException("Checkout session {$session->public_id} has no plan.");
+        }
+
+        $priceId = $plan->gateway_ids['stripe'] ?? null;
+        if (! $priceId) {
+            $priceId = $this->syncPriceForPlan($plan);
+        }
+        if (! $priceId) {
+            throw new RuntimeException("Plan [{$plan->slug}] has no Stripe Price ID (free plans skip checkout entirely).");
+        }
+
+        $customer = $this->ensureCustomer($session->tenant);
+
+        $subscriptionData = [
+            'metadata' => [
+                'tenant_id' => (string) $session->tenant_id,
+                'plan_id' => (string) $session->plan_id,
+                'plan_slug' => $plan->slug,
+                'checkout_session_public_id' => $session->public_id,
+            ],
+        ];
+        if ($plan->trial_days > 0) {
+            $subscriptionData['trial_period_days'] = (int) $plan->trial_days;
+        }
+
+        $stripeSession = $this->client->checkout->sessions->create([
+            'mode' => 'subscription',
+            'customer' => $customer->gateway_customer_id,
+            'line_items' => [
+                ['price' => $priceId, 'quantity' => 1],
+            ],
+            'success_url' => route('checkout.return', ['session' => $session->public_id]).'?session_id={CHECKOUT_SESSION_ID}',
+            'cancel_url' => route('checkout.show', ['session' => $session->public_id]).'?canceled=1',
+            'client_reference_id' => $session->public_id,
+            'subscription_data' => $subscriptionData,
+            'metadata' => [
+                'checkout_session_public_id' => $session->public_id,
+            ],
+        ]);
+
+        $result = new RedirectCheckout(
+            gatewaySessionId: (string) $stripeSession->id,
+            url: (string) $stripeSession->url,
+            expiresAt: $stripeSession->expires_at,
+        );
+
+        $session->forceFill([
+            'gateway' => 'stripe',
+            'gateway_session_id' => $result->gatewaySessionId,
+            'status' => CheckoutSession::STATUS_AWAITING_PAYMENT,
+            'result_kind' => $result->kind,
+            'result_payload' => $result->toPayload(),
+            'expires_at' => $result->expiresAt !== null ? Carbon::createFromTimestamp($result->expiresAt) : $session->expires_at,
+        ])->save();
+
+        return $result;
     }
 
     /**
@@ -185,6 +296,17 @@ class StripeGateway implements PaymentGateway, SubscriptionGateway
 
         $customer = $this->ensureCustomer($tenant);
 
+        $subscriptionData = [
+            'metadata' => [
+                'tenant_id' => (string) $tenant->id,
+                'plan_id' => (string) $plan->id,
+                'plan_slug' => $plan->slug,
+            ],
+        ];
+        if ($plan->trial_days > 0) {
+            $subscriptionData['trial_period_days'] = (int) $plan->trial_days;
+        }
+
         $session = $this->client->checkout->sessions->create([
             'mode' => 'subscription',
             'customer' => $customer->gateway_customer_id,
@@ -193,14 +315,7 @@ class StripeGateway implements PaymentGateway, SubscriptionGateway
             ],
             'success_url' => $successUrl.'?session_id={CHECKOUT_SESSION_ID}',
             'cancel_url' => $cancelUrl,
-            'subscription_data' => [
-                'metadata' => [
-                    'tenant_id' => (string) $tenant->id,
-                    'plan_id' => (string) $plan->id,
-                    'plan_slug' => $plan->slug,
-                ],
-                'trial_period_days' => $plan->trial_days > 0 ? $plan->trial_days : null,
-            ],
+            'subscription_data' => $subscriptionData,
         ]);
 
         return (string) $session->url;
@@ -439,6 +554,7 @@ class StripeGateway implements PaymentGateway, SubscriptionGateway
     private function dispatchEvent(string $type, array $payload): void
     {
         match (true) {
+            $type === 'checkout.session.completed' => $this->onCheckoutSessionCompleted($payload),
             $type === 'customer.subscription.created',
             $type === 'customer.subscription.updated',
             $type === 'customer.subscription.deleted' => $this->onSubscriptionEvent($payload),
@@ -447,6 +563,75 @@ class StripeGateway implements PaymentGateway, SubscriptionGateway
             $type === 'invoice.payment_failed' => $this->onInvoicePaymentFailed($payload),
             default => null,
         };
+    }
+
+    /**
+     * Reconcile a `checkout.session.completed` webhook event with the local
+     * CheckoutSession row. Locates the session via client_reference_id /
+     * metadata.checkout_session_public_id (we set both in initiateCheckout),
+     * extracts the freshly-created Stripe subscription id, and delegates to
+     * CheckoutService::complete to create the local Subscription + Invoice
+     * + Payment.
+     *
+     * @param  array<string, mixed>  $payload
+     */
+    private function onCheckoutSessionCompleted(array $payload): void
+    {
+        $object = $payload['data']['object'] ?? null;
+        if (! is_array($object)) {
+            return;
+        }
+
+        $publicId = (string) (
+            $object['client_reference_id']
+            ?? ($object['metadata']['checkout_session_public_id'] ?? '')
+        );
+        if ($publicId === '') {
+            Log::warning('Stripe checkout.session.completed received with no client_reference_id', [
+                'session_id' => $object['id'] ?? null,
+            ]);
+
+            return;
+        }
+
+        $session = CheckoutSession::query()->where('public_id', $publicId)->first();
+        if ($session === null) {
+            Log::warning('Stripe checkout.session.completed: no matching CheckoutSession', [
+                'public_id' => $publicId,
+                'session_id' => $object['id'] ?? null,
+            ]);
+
+            return;
+        }
+
+        if ($session->status === CheckoutSession::STATUS_COMPLETED) {
+            return; // idempotent re-delivery
+        }
+
+        // Mode=subscription gives us object.subscription = sub_xxx.
+        $stripeSubId = (string) ($object['subscription'] ?? '');
+        $stripeInvoiceId = (string) ($object['invoice'] ?? '');
+        $stripePaymentIntentId = (string) ($object['payment_intent'] ?? '');
+
+        // Pull the Stripe subscription so we know dates + amount.
+        $stripeSub = $stripeSubId !== '' ? $this->client->subscriptions->retrieve($stripeSubId) : null;
+
+        $checkout = app(CheckoutService::class);
+        $checkout->complete($session, [
+            'gateway_subscription_id' => $stripeSubId,
+            'status' => $stripeSub?->status ?? 'active',
+            'unit_amount_cents' => $session->amount_cents,
+            'quantity' => 1,
+            'trial_starts_at' => $stripeSub?->trial_start ? CarbonImmutable::createFromTimestamp($stripeSub->trial_start) : null,
+            'trial_ends_at' => $stripeSub?->trial_end ? CarbonImmutable::createFromTimestamp($stripeSub->trial_end) : null,
+            'current_period_start' => $stripeSub?->current_period_start ? CarbonImmutable::createFromTimestamp($stripeSub->current_period_start) : now(),
+            'current_period_end' => $stripeSub?->current_period_end ? CarbonImmutable::createFromTimestamp($stripeSub->current_period_end) : now()->addMonth(),
+            'cancel_at_period_end' => (bool) ($stripeSub?->cancel_at_period_end ?? false),
+            'gateway_invoice_id' => $stripeInvoiceId,
+            'invoice_number' => 'INV-'.$session->public_id,
+            'gateway_payment_id' => $stripePaymentIntentId !== '' ? $stripePaymentIntentId : null,
+            'paid_amount_cents' => (int) ($object['amount_total'] ?? $session->amount_cents),
+        ]);
     }
 
     /**
