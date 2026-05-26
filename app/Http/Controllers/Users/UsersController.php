@@ -83,7 +83,7 @@ class UsersController extends Controller
         ]);
     }
 
-    public function store(UserStoreRequest $request): RedirectResponse
+    public function store(UserStoreRequest $request, string $tenantSlug): RedirectResponse
     {
         User::create([
             'name' => $request->string('name'),
@@ -94,11 +94,12 @@ class UsersController extends Controller
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('User created.')]);
 
-        return to_route('users.index');
+        return to_route('tenants.users.index', ['tenantSlug' => $tenantSlug]);
     }
 
-    public function update(UserUpdateRequest $request, User $user): RedirectResponse
+    public function update(UserUpdateRequest $request, string $tenantSlug, User $user): RedirectResponse
     {
+        unset($tenantSlug);
         $validated = $request->validated();
 
         $user->name = $validated['name'];
@@ -115,12 +116,12 @@ class UsersController extends Controller
         return back();
     }
 
-    public function destroy(UserDestroyRequest $request, User $user): RedirectResponse
+    public function destroy(UserDestroyRequest $request, string $tenantSlug, User $user): RedirectResponse
     {
         $user->delete();
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('User deleted.')]);
 
-        return to_route('users.index');
+        return to_route('tenants.users.index', ['tenantSlug' => $tenantSlug]);
     }
 }

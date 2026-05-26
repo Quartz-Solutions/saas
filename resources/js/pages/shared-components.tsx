@@ -16,9 +16,24 @@ import {
     User,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import type {DateRange} from 'react-day-picker';
+import { toast } from 'sonner';
 import AlertError from '@/components/alert-error';
+import {
+    DataTable
+    
+    
+    
+} from '@/components/data-table/data-table';
+import type {DataTableColumn, DataTableFilter, PaginationData} from '@/components/data-table/data-table';
 import Heading from '@/components/heading';
 import InputError from '@/components/input-error';
+import {
+    LocalDataTable
+    
+    
+} from '@/components/local-data-table';
+import type {LocalTableColumn, LocalTableFilter} from '@/components/local-data-table';
 import PasswordInput from '@/components/password-input';
 import TextLink from '@/components/text-link';
 import {
@@ -77,6 +92,7 @@ import {
     ContextMenuShortcut,
     ContextMenuTrigger,
 } from '@/components/ui/context-menu';
+import { DateRangePicker } from '@/components/ui/date-range-picker';
 import {
     Dialog,
     DialogContent,
@@ -159,21 +175,8 @@ import {
     TooltipContent,
     TooltipTrigger,
 } from '@/components/ui/tooltip';
-import {
-    DataTable,
-    type DataTableColumn,
-    type DataTableFilter,
-    type PaginationData,
-} from '@/components/data-table/data-table';
-import { DateRangePicker } from '@/components/ui/date-range-picker';
-import {
-    LocalDataTable,
-    type LocalTableColumn,
-    type LocalTableFilter,
-} from '@/components/local-data-table';
-import { dashboard, sharedComponents } from '@/routes';
-import { toast } from 'sonner';
-import { type DateRange } from 'react-day-picker';
+import { dashboard } from '@/routes';
+import tenantRoutes from '@/routes/tenants';
 
 interface Product {
     id: number;
@@ -287,6 +290,7 @@ export default function SharedComponents() {
     const serverPageSize = 5;
     const serverFiltered = useMemo(() => {
         let rows = [...allProducts];
+
         if (serverSearch.trim()) {
             const q = serverSearch.toLowerCase();
             rows = rows.filter(
@@ -295,20 +299,30 @@ export default function SharedComponents() {
                     r.sku.toLowerCase().includes(q),
             );
         }
+
         if (serverFilters.category) {
             rows = rows.filter((r) => r.category === serverFilters.category);
         }
+
         if (serverFilters.status) {
             rows = rows.filter((r) => r.status === serverFilters.status);
         }
+
         if (serverFilters.price?.includes('|')) {
             const [min, max] = serverFilters.price.split('|');
             rows = rows.filter((r) => {
-                if (min && r.price < Number(min)) return false;
-                if (max && r.price > Number(max)) return false;
+                if (min && r.price < Number(min)) {
+return false;
+}
+
+                if (max && r.price > Number(max)) {
+return false;
+}
+
                 return true;
             });
         }
+
         if (serverSort.column) {
             rows.sort((a, b) => {
                 const av = a[serverSort.column as keyof Product];
@@ -317,14 +331,17 @@ export default function SharedComponents() {
                     typeof av === 'number' && typeof bv === 'number'
                         ? av - bv
                         : String(av).localeCompare(String(bv));
+
                 return serverSort.direction === 'asc' ? cmp : -cmp;
             });
         }
+
         return rows;
     }, [allProducts, serverSearch, serverFilters, serverSort]);
 
     const serverPaginated = useMemo(() => {
         const start = (serverPage - 1) * serverPageSize;
+
         return serverFiltered.slice(start, start + serverPageSize);
     }, [serverFiltered, serverPage]);
 
@@ -1885,8 +1902,25 @@ const [range, setRange] = useState<DateRange | undefined>();
 }
 
 SharedComponents.layout = {
-    breadcrumbs: [
-        { title: 'Dashboard', href: dashboard() },
-        { title: 'Shared Components', href: sharedComponents() },
-    ],
+    breadcrumbs: ({
+        currentTenant,
+    }: {
+        currentTenant: { slug: string; name: string } | null;
+    }) => {
+        if (currentTenant) {
+            return [
+                {
+                    title: currentTenant.name,
+                    href: tenantRoutes.dashboard({ tenantSlug: currentTenant.slug }),
+                },
+                {
+                    title: 'Shared Components',
+                    href: tenantRoutes.sharedComponents({
+                        tenantSlug: currentTenant.slug,
+                    }),
+                },
+            ];
+        }
+        return [{ title: 'Dashboard', href: dashboard() }];
+    },
 };
