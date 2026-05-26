@@ -35,11 +35,14 @@ class SetCurrentTenant
             app()->instance('currentTenant', $tenant);
 
             $user = $request->user();
-            if ($user !== null
-                && $user->currentTenant?->id !== $tenant->id
-                && $user->tenants()->whereKey($tenant->id)->exists()
-            ) {
-                $user->forceFill(['current_tenant_id' => $tenant->id])->save();
+            if ($user !== null) {
+                $user->unsetRelation('roles')->unsetRelation('permissions');
+
+                if ($user->currentTenant?->id !== $tenant->id
+                    && $user->tenants()->whereKey($tenant->id)->exists()
+                ) {
+                    $user->forceFill(['current_tenant_id' => $tenant->id])->save();
+                }
             }
 
             $authUser = $request->user();

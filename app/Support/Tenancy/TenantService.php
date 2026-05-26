@@ -17,6 +17,7 @@ use Illuminate\Support\Str;
 use InvalidArgumentException;
 use RuntimeException;
 use Spatie\Permission\Models\Role;
+use Spatie\Permission\PermissionRegistrar;
 
 /**
  * Canonical service for all tenant lifecycle mutations.
@@ -75,6 +76,8 @@ class TenantService
 
             setPermissionsTeamId($tenant->id);
             $owner->assignRole('Owner');
+            app(PermissionRegistrar::class)->forgetCachedPermissions();
+            $owner->unsetRelation('roles')->unsetRelation('permissions');
 
             return $tenant->fresh();
         });
@@ -317,9 +320,12 @@ class TenantService
 
             if ($previousOwner !== null) {
                 $previousOwner->syncRoles(['Admin']);
+                $previousOwner->unsetRelation('roles')->unsetRelation('permissions');
             }
 
             $acceptor->syncRoles(['Owner']);
+            $acceptor->unsetRelation('roles')->unsetRelation('permissions');
+            app(PermissionRegistrar::class)->forgetCachedPermissions();
 
             $transfer->forceFill(['accepted_at' => now()])->save();
 
@@ -367,6 +373,8 @@ class TenantService
 
         setPermissionsTeamId($tenant->id);
         $user->assignRole($role);
+        app(PermissionRegistrar::class)->forgetCachedPermissions();
+        $user->unsetRelation('roles')->unsetRelation('permissions');
 
         return $membership;
     }

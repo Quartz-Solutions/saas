@@ -21,7 +21,6 @@ class SubscribeRequest extends FormRequest
             return false;
         }
 
-        // Only Owner / Admin roles can mutate billing.
         setPermissionsTeamId($tenant->id);
 
         return $user->hasAnyRole(['Owner', 'Admin']);
