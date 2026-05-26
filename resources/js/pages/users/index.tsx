@@ -223,7 +223,7 @@ export default function UsersIndex({ users, tableState }: Props) {
                 <div className="flex items-start justify-between gap-4">
                     <Heading
                         title="Users"
-                        description="Manage staff accounts that can sign in to the POS."
+                        description="Manage user accounts that can sign in to the app."
                     />
                     <Button onClick={() => setCreateOpen(true)}>
                         <UserPlus />

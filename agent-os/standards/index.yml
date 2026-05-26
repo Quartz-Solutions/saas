@@ -4,9 +4,9 @@ backend:
   api:
     description: Needs description - run /index-standards
   controller-conventions:
-    description: Thin controllers, FormRequest for writes, Inertia::render for GETs, by-feature folder layout (Settings/, Catalog/, Pos/, Storefront/)
+    description: Thin controllers, FormRequest for writes, Inertia::render for GETs, by-feature folder layout under app/Http/Controllers/{Module}/
   migration-conventions:
-    description: Money as integer _cents columns; explicit FK cascade behavior; SoftDeletes on orders/customers/products
+    description: Money as integer _cents columns; explicit FK cascade behavior; SoftDeletes on entities with audit/history value
   migrations:
     description: Needs description - run /index-standards
   model-conventions:
@@ -28,7 +28,7 @@ frontend:
   data-tables:
     description: DataTable<T> for server-paginated lists, LocalDataTable<T> for in-memory sets; async-select + range + daterange filters; cookie/API preferences via user_preferences table
   inertia-layouts:
-    description: Layout dispatch by page-name prefix; PublicLayout default, admin/ → AppLayout, auth/ → AuthLayout
+    description: Layout dispatch by page-name prefix in resources/js/app.tsx — welcome bare, auth/* → AuthLayout, settings/* → [AppLayout, SettingsLayout], default → AppLayout
   page-components:
     description: Pages in resources/js/pages are thin Inertia entry points; <Form> + Wayfinder, uncontrolled inputs, Page.layout data
   responsive:

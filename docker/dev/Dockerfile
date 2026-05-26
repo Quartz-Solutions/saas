@@ -1,5 +1,5 @@
 # ============================================================================
-# POS — Development image
+# Development image
 # ----------------------------------------------------------------------------
 # Runs PHP-FPM + nginx + Vite dev server in a single container. Source is
 # bind-mounted at runtime; vendor/, node_modules/, bootstrap/cache/,

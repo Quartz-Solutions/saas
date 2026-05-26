@@ -80,7 +80,7 @@ All gateways implement `App\Support\Billing\PaymentGateway` (one-time) and optio
 
 ## Testing & quality
 
-- **PHPUnit** 12 — `pos_test` Postgres test DB with `RefreshDatabase`, `SeedsAdminContext` trait for fixtures
+- **PHPUnit** 12 — in-memory SQLite for fast feature tests (per `phpunit.xml`); switch to a dedicated Postgres test DB if your feature exercises Postgres-only syntax
 - **Linting (PHP)** Laravel Pint
 - **Linting (JS/TS)** ESLint 9 + `typescript-eslint` + `eslint-plugin-react` + `eslint-plugin-react-hooks` + `@stylistic/eslint-plugin`
 - **Formatting** Prettier 3 + `prettier-plugin-tailwindcss`

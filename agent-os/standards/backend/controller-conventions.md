@@ -10,9 +10,9 @@ Group controllers by feature module. Match URL/page-name structure.
 ```
 app/Http/Controllers/
   Settings/      → settings.* routes
-  Catalog/       → products, categories
-  Pos/           → register, checkout
-  Storefront/    → public shop pages
+  Users/         → users CRUD
+  API/           → JSON endpoints consumed by the SPA (e.g. async-select search)
+  {Module}/      → one folder per top-level feature you add
 ```
 Matching FormRequests live at `app/Http/Requests/<Module>/<X>Request.php`.
 

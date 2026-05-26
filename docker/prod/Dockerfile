@@ -1,5 +1,5 @@
 # ============================================================================
-# POS — Production image
+# Production image
 # ----------------------------------------------------------------------------
 # Single-stage with post-build cleanup: composer --no-dev, npm run build,
 # then node + build toolchain are removed so the runtime image only ships
