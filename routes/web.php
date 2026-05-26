@@ -118,3 +118,4 @@ Route::middleware(['auth', 'verified'])->get('dashboard', function () {
 })->name('dashboard');
 
 require __DIR__.'/settings.php';
+require __DIR__.'/admin.php';

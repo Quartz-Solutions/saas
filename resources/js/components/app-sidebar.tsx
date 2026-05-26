@@ -7,6 +7,7 @@ import {
     LayoutGrid,
     Mail,
     Settings as SettingsIcon,
+    ShieldCheck,
     UsersRound,
 } from 'lucide-react';
 import AppLogo from '@/components/app-logo';
@@ -25,6 +26,7 @@ import {
 } from '@/components/ui/sidebar';
 import { dashboard as rootDashboard } from '@/routes';
 import { index as accountTenants } from '@/routes/account/tenants';
+import { dashboard as adminDashboard } from '@/routes/admin';
 import tenantRoutes from '@/routes/tenants';
 import type { NavItem } from '@/types';
 
@@ -42,13 +44,15 @@ const footerNavItems: NavItem[] = [
 ];
 
 export function AppSidebar() {
-    const { currentTenant } = usePage<{
+    const { auth, currentTenant } = usePage<{
+        auth: { user: { id: number } | null; isSuperAdmin?: boolean };
         currentTenant: { slug: string; name: string } | null;
     }>().props;
 
     const tenantSlug = currentTenant?.slug;
+    const isSuperAdmin = !!auth?.isSuperAdmin;
 
-    const mainNavItems: NavItem[] = tenantSlug
+    const tenantNavItems: NavItem[] = tenantSlug
         ? [
               {
                   title: 'Dashboard',
@@ -83,6 +87,16 @@ export function AppSidebar() {
                   icon: Building2,
               },
           ];
+
+    const adminEntry: NavItem = {
+        title: 'Admin',
+        href: adminDashboard(),
+        icon: ShieldCheck,
+    };
+
+    const mainNavItems: NavItem[] = isSuperAdmin
+        ? [...tenantNavItems, adminEntry]
+        : tenantNavItems;
 
     return (
         <Sidebar collapsible="icon" variant="inset">
