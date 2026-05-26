@@ -15,10 +15,13 @@ ENV COMPOSER_ALLOW_SUPERUSER=1 \
     PNPM_HOME=/usr/local/bin
 
 # ---- System packages + PHP extensions --------------------------------------
+# Note: aws-cli is included so docker/scripts/backup-db.sh can stream the
+# nightly pg_dump to S3 when BACKUP_BUCKET is set. It's a thin Python wrapper
+# (~50 MB) — drop it if you only ever back up to local storage.
 RUN apk add --no-cache \
         nginx supervisor curl \
         libpng libjpeg-turbo freetype libzip icu oniguruma libxml2 \
-        libpq postgresql-client \
+        libpq postgresql-client aws-cli \
     && apk add --no-cache --virtual .build-deps \
         libpng-dev libjpeg-turbo-dev freetype-dev libzip-dev \
         icu-dev oniguruma-dev libxml2-dev postgresql-dev \

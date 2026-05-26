@@ -7,6 +7,7 @@ use App\Models\FeatureFlag;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Models\WebhookEvent;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -65,7 +66,7 @@ class AuditSchemaTest extends TestCase
             'gateway_event_id' => 'evt_123',
         ]);
 
-        $this->expectException(\Illuminate\Database\QueryException::class);
+        $this->expectException(QueryException::class);
 
         WebhookEvent::factory()->create([
             'gateway' => 'stripe',
