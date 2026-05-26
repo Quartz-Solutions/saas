@@ -2,12 +2,14 @@
 
 namespace App\Support\Tenancy;
 
+use App\Mail\TenantInviteMail;
 use App\Models\Tenant;
 use App\Models\TenantInvitation;
 use App\Models\TenantMembership;
 use App\Models\TenantOwnerTransfer;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
 use RuntimeException;
@@ -168,7 +170,13 @@ class TenantService
                 }
             }
 
-            return $invitation->fresh();
+            // Phase 6 — deliver the invitation email. Queued for delivery so
+            // the controller response is not blocked by SMTP.
+            $invitation = $invitation->fresh();
+            $invitation->loadMissing(['tenant', 'inviter']);
+            Mail::to($invitation->email)->queue(new TenantInviteMail($invitation));
+
+            return $invitation;
         });
     }
 

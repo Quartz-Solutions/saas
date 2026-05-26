@@ -1,6 +1,8 @@
 <?php
 
+use App\Http\Controllers\Notifications\NotificationsController;
 use App\Http\Controllers\Settings\DataExportController;
+use App\Http\Controllers\Settings\NotificationsPreferencesController;
 use App\Http\Controllers\Settings\ProfileController;
 use App\Http\Controllers\Settings\SecurityController;
 use App\Http\Controllers\Settings\SessionsController;
@@ -44,4 +46,14 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('settings/privacy/exports/{export}/download', [DataExportController::class, 'download'])
         ->middleware('signed')
         ->name('privacy.exports.download');
+
+    Route::get('settings/notifications', [NotificationsPreferencesController::class, 'edit'])
+        ->name('settings.notifications.edit');
+    Route::patch('settings/notifications', [NotificationsPreferencesController::class, 'update'])
+        ->name('settings.notifications.update');
+
+    Route::patch('notifications/{id}/read', [NotificationsController::class, 'markRead'])
+        ->name('notifications.read');
+    Route::patch('notifications/read-all', [NotificationsController::class, 'markAllRead'])
+        ->name('notifications.read-all');
 });
