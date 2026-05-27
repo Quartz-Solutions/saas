@@ -4,8 +4,9 @@ namespace App\Support\Auth;
 
 use App\Models\MagicLoginToken;
 use App\Models\User;
-use App\Notifications\MagicLinkNotification;
+use App\Support\Notifications\NotificationDispatcher;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Str;
 
 /**
@@ -42,7 +43,16 @@ class MagicLinkService
             'expires_at' => now()->addMinutes(self::TTL_MINUTES),
         ]);
 
-        $user->notify(new MagicLinkNotification($plain));
+        $signedUrl = URL::temporarySignedRoute(
+            'auth.magic-link.consume',
+            now()->addMinutes(self::TTL_MINUTES),
+            ['token' => $plain],
+        );
+
+        app(NotificationDispatcher::class)->send($user, 'magic_link', [
+            'magicUrl' => $signedUrl,
+            'ttl_minutes' => self::TTL_MINUTES,
+        ]);
     }
 
     /**

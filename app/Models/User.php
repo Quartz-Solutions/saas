@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\Notifications\NotificationDispatcher;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
@@ -11,6 +12,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Support\Facades\URL;
 use Laravel\Fortify\TwoFactorAuthenticatable;
 use Laravel\Sanctum\HasApiTokens;
 use Spatie\Permission\Traits\HasRoles;
@@ -88,5 +90,45 @@ class User extends Authenticatable
     public function socialAccounts(): HasMany
     {
         return $this->hasMany(SocialAccount::class);
+    }
+
+    /**
+     * Override Laravel's default password-reset notification so we route
+     * through NotificationDispatcher → PasswordResetMail. Keeps every
+     * outbound email going through the same canonical seam.
+     */
+    public function sendPasswordResetNotification($token): void
+    {
+        app(NotificationDispatcher::class)
+            ->send($this, 'password_reset', [
+                'token' => $token,
+                'resetUrl' => url(
+                    route('password.reset', [
+                        'token' => $token,
+                        'email' => $this->email,
+                    ], false),
+                ),
+            ]);
+    }
+
+    /**
+     * Override Laravel's default email-verification notification so we
+     * route through NotificationDispatcher → EmailVerificationMail.
+     */
+    public function sendEmailVerificationNotification(): void
+    {
+        $verifyUrl = URL::temporarySignedRoute(
+            'verification.verify',
+            now()->addMinutes((int) config('auth.verification.expire', 60)),
+            [
+                'id' => $this->getKey(),
+                'hash' => sha1($this->getEmailForVerification()),
+            ],
+        );
+
+        app(NotificationDispatcher::class)
+            ->send($this, 'email_verification', [
+                'verifyUrl' => $verifyUrl,
+            ]);
     }
 }

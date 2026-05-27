@@ -32,6 +32,7 @@ use Illuminate\Support\Str;
     'expires_at',
     'completed_at',
     'canceled_at',
+    'abandonment_reminder_sent_at',
     'cancel_reason',
     'metadata',
 ])]

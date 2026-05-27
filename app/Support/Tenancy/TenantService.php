@@ -182,6 +182,32 @@ class TenantService
             $invitation->loadMissing(['tenant', 'inviter']);
             Mail::to($invitation->email)->queue(new TenantInviteMail($invitation));
 
+            // If the invitee email matches an existing user, write an
+            // in-app bell entry so they see it on their next page load.
+            // (Email already went out via direct Mail::queue above; the
+            // dispatcher path would try to rebuild TenantInviteMail with a
+            // User arg which doesn't match its (TenantInvitation) ctor.)
+            $existing = User::query()->where('email', $invitation->email)->first();
+            if ($existing !== null) {
+                $existing->notifications()->create([
+                    'id' => (string) Str::uuid(),
+                    'type' => 'App\\Notifications\\TenantInvite',
+                    'data' => [
+                        'event' => 'tenant_invite',
+                        'title' => 'Tenant invitation',
+                        'description' => 'You have been invited to join a workspace.',
+                        'tenant' => [
+                            'id' => $invitation->tenant?->id,
+                            'name' => $invitation->tenant?->name,
+                            'slug' => $invitation->tenant?->slug,
+                        ],
+                        'inviter' => $invitation->inviter?->email,
+                        'role' => $invitation->role,
+                        'expires_at' => $invitation->expires_at?->toIso8601String(),
+                    ],
+                ]);
+            }
+
             return $invitation;
         });
 

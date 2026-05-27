@@ -70,7 +70,7 @@ class CheckoutFlowTest extends TestCase
 
         $session = CheckoutSession::query()->where('user_id', $user->id)->latest('id')->firstOrFail();
         $this->assertSame(CheckoutSession::STATUS_PENDING, $session->status);
-        $this->assertSame(2900, $session->amount_cents);
+        $this->assertSame(2000, $session->amount_cents);
         $this->assertNull($session->gateway);
 
         $response->assertRedirect('/checkout/'.$session->public_id);

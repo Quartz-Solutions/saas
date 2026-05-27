@@ -1,5 +1,6 @@
 <?php
 
+use App\Mail\CheckoutAbandonmentReminderMail;
 use App\Mail\EmailVerificationMail;
 use App\Mail\LoginAlertMail;
 use App\Mail\MagicLinkMail;
@@ -159,6 +160,15 @@ return [
             'description' => 'Notify you when your account signs in from a new device.',
             'group' => 'security',
             'mailable' => LoginAlertMail::class,
+            'defaults' => ['email' => true, 'database' => true],
+            'always_on' => false,
+        ],
+
+        'checkout_abandonment_reminder' => [
+            'label' => 'Checkout abandonment reminder',
+            'description' => 'Friendly nudge when you start a checkout but don\'t finish it.',
+            'group' => 'billing',
+            'mailable' => CheckoutAbandonmentReminderMail::class,
             'defaults' => ['email' => true, 'database' => true],
             'always_on' => false,
         ],

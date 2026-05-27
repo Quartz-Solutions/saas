@@ -43,11 +43,10 @@ class CheckoutAbandonmentReminderTest extends TestCase
 
         (new ExpireStaleCheckouts)->handle(app(CheckoutService::class));
 
-        Mail::assertQueued(CheckoutAbandonmentReminderMail::class, function (CheckoutAbandonmentReminderMail $mail) use ($owner, $session) {
+        Mail::assertQueued(CheckoutAbandonmentReminderMail::class, function (CheckoutAbandonmentReminderMail $mail) use ($owner) {
             return $mail->hasTo('owner@example.test')
                 && $mail->user->is($owner)
-                && $mail->session->is($session)
-                && str_contains($mail->resumeUrl, '/billing/plans');
+                && str_contains((string) ($mail->context['resumeUrl'] ?? ''), '/billing/plans');
         });
 
         $session->refresh();

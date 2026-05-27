@@ -1,6 +1,8 @@
 <?php
 
 use App\Jobs\ExpireStaleCheckouts;
+use App\Jobs\SendCheckoutAbandonmentReminders;
+use App\Jobs\SendTrialEndingReminders;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
@@ -35,6 +37,31 @@ Schedule::job(new ExpireStaleCheckouts)
     ->everyFiveMinutes()
     ->onOneServer()
     ->name('expire-stale-checkouts');
+
+/*
+|--------------------------------------------------------------------------
+| Checkout abandonment reminders (1h after start)
+|--------------------------------------------------------------------------
+| Notifies users who started a checkout but haven't completed it after an
+| hour. The session is then expired automatically by ExpireStaleCheckouts
+| when expires_at passes (default 2h via CHECKOUT_TIMEOUT_MINUTES=120).
+*/
+Schedule::job(new SendCheckoutAbandonmentReminders)
+    ->everyTenMinutes()
+    ->onOneServer()
+    ->name('checkout-abandonment-reminders');
+
+/*
+|--------------------------------------------------------------------------
+| Trial-ending reminders
+|--------------------------------------------------------------------------
+| Daily sweep for trialing subscriptions whose trial_ends_at is within the
+| next 3 days. Deduped via metadata.trial_reminder_sent_at.
+*/
+Schedule::job(new SendTrialEndingReminders)
+    ->dailyAt('09:00')
+    ->onOneServer()
+    ->name('trial-ending-reminders');
 
 /*
 |--------------------------------------------------------------------------

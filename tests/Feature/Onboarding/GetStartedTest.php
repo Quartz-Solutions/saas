@@ -130,13 +130,13 @@ class GetStartedTest extends TestCase
         $response->assertRedirect('/checkout/'.$session->public_id);
         $this->assertSame(CheckoutSession::STATUS_PENDING, $session->status);
         $this->assertSame($tenant->id, $session->tenant_id);
-        $this->assertSame(2900, $session->amount_cents);
+        $this->assertSame(2000, $session->amount_cents);
 
         // No Subscription yet — gateway hasn't been picked + paid.
         $this->assertDatabaseMissing('subscriptions', [
             'tenant_id' => $tenant->id,
             'status' => 'active',
-            'unit_amount_cents' => 2900,
+            'unit_amount_cents' => 2000,
         ]);
     }
 

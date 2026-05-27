@@ -3,14 +3,14 @@
 namespace Tests\Feature\Compliance;
 
 use App\Listeners\AlertOnNewDeviceLogin;
+use App\Mail\LoginAlertMail;
 use App\Models\LoginHistory;
 use App\Models\User;
-use App\Notifications\NewDeviceLoginAlert;
 use App\Support\Auth\LoginHistoryRecorder;
 use Illuminate\Auth\Events\Login;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Facades\Mail;
 use Tests\TestCase;
 
 class NewDeviceLoginAlertTest extends TestCase
@@ -19,7 +19,7 @@ class NewDeviceLoginAlertTest extends TestCase
 
     public function test_alert_fires_on_new_ip(): void
     {
-        Notification::fake();
+        Mail::fake();
 
         $user = User::factory()->create();
 
@@ -39,12 +39,12 @@ class NewDeviceLoginAlertTest extends TestCase
         $listener = new AlertOnNewDeviceLogin(new LoginHistoryRecorder, $request);
         $listener->handle(new Login('web', $user, false));
 
-        Notification::assertSentTo($user, NewDeviceLoginAlert::class);
+        Mail::assertQueued(LoginAlertMail::class, fn ($m) => $m->user->is($user));
     }
 
     public function test_alert_does_not_fire_on_first_login(): void
     {
-        Notification::fake();
+        Mail::fake();
 
         $user = User::factory()->create();
 
@@ -56,12 +56,12 @@ class NewDeviceLoginAlertTest extends TestCase
         $listener = new AlertOnNewDeviceLogin(new LoginHistoryRecorder, $request);
         $listener->handle(new Login('web', $user, false));
 
-        Notification::assertNothingSentTo($user);
+        Mail::assertNotQueued(LoginAlertMail::class);
     }
 
     public function test_alert_does_not_fire_on_same_device(): void
     {
-        Notification::fake();
+        Mail::fake();
 
         $user = User::factory()->create();
 
@@ -81,12 +81,12 @@ class NewDeviceLoginAlertTest extends TestCase
         $listener = new AlertOnNewDeviceLogin(new LoginHistoryRecorder, $request);
         $listener->handle(new Login('web', $user, false));
 
-        Notification::assertNothingSentTo($user);
+        Mail::assertNotQueued(LoginAlertMail::class);
     }
 
     public function test_login_history_is_recorded_after_alert(): void
     {
-        Notification::fake();
+        Mail::fake();
 
         $user = User::factory()->create();
 

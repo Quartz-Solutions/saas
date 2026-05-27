@@ -37,7 +37,11 @@ class SendCheckoutAbandonmentReminder
             : url('/get-started');
 
         Mail::to($recipient->email)
-            ->send(new CheckoutAbandonmentReminderMail($recipient, $session, $resumeUrl));
+            ->send(new CheckoutAbandonmentReminderMail($recipient, [
+                'planName' => $session->plan?->name ?? 'a plan',
+                'resumeUrl' => $resumeUrl,
+                'cancelAt' => $session->expires_at?->toDayDateTimeString(),
+            ]));
 
         // Stamp metadata so a re-fired event (e.g. webhook replay) doesn't
         // double-send. The expireStale sweep only fires once per session, but

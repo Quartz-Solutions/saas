@@ -46,7 +46,7 @@ class MarketingRoutesTest extends TestCase
             ->where('plans.1.slug', 'pro')
             ->where('plans.2.slug', 'enterprise')
             ->where('plans.0.price_cents', 0)
-            ->where('plans.1.price_cents', 2900)
+            ->where('plans.1.price_cents', 2000)
             ->where('trialDays', 14)
         );
     }

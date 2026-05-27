@@ -2,11 +2,11 @@
 
 namespace Tests\Feature\Auth;
 
+use App\Mail\MagicLinkMail;
 use App\Models\MagicLoginToken;
 use App\Models\User;
-use App\Notifications\MagicLinkNotification;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\URL;
 use Tests\TestCase;
 
@@ -30,26 +30,26 @@ class MagicLinkTest extends TestCase
 
     public function test_request_sends_a_notification_when_user_exists(): void
     {
-        Notification::fake();
+        Mail::fake();
 
         $user = User::factory()->create();
 
         $this->post(route('auth.magic-link.store'), ['email' => $user->email])
             ->assertSessionHas('status');
 
-        Notification::assertSentTo($user, MagicLinkNotification::class);
+        Mail::assertQueued(MagicLinkMail::class, fn ($m) => $m->user->is($user));
         $this->assertDatabaseCount('magic_login_tokens', 1);
         $this->assertDatabaseHas('magic_login_tokens', ['user_id' => $user->id]);
     }
 
     public function test_request_does_not_leak_when_email_unknown(): void
     {
-        Notification::fake();
+        Mail::fake();
 
         $this->post(route('auth.magic-link.store'), ['email' => 'ghost@example.com'])
             ->assertSessionHas('status');
 
-        Notification::assertNothingSent();
+        Mail::assertNothingQueued();
         $this->assertDatabaseCount('magic_login_tokens', 0);
     }
 
@@ -61,23 +61,17 @@ class MagicLinkTest extends TestCase
 
     public function test_valid_signed_token_logs_user_in(): void
     {
-        Notification::fake();
+        Mail::fake();
 
         $user = User::factory()->create();
         $this->post(route('auth.magic-link.store'), ['email' => $user->email]);
 
-        $captured = null;
-        Notification::assertSentTo($user, MagicLinkNotification::class, function ($notification) use (&$captured) {
-            $captured = $notification->plainToken;
-
+        $signedUrl = null;
+        Mail::assertQueued(MagicLinkMail::class, function ($m) use ($user, &$signedUrl) {
+            if (! $m->user->is($user)) return false;
+            $signedUrl = $m->magicUrl;
             return true;
         });
-
-        $signedUrl = URL::temporarySignedRoute(
-            'auth.magic-link.consume',
-            now()->addMinutes(15),
-            ['token' => $captured],
-        );
 
         $this->get($signedUrl)
             ->assertRedirect(route('dashboard', absolute: false));
@@ -88,23 +82,17 @@ class MagicLinkTest extends TestCase
 
     public function test_token_cannot_be_consumed_twice(): void
     {
-        Notification::fake();
+        Mail::fake();
 
         $user = User::factory()->create();
         $this->post(route('auth.magic-link.store'), ['email' => $user->email]);
 
-        $captured = null;
-        Notification::assertSentTo($user, MagicLinkNotification::class, function ($notification) use (&$captured) {
-            $captured = $notification->plainToken;
-
+        $signedUrl = null;
+        Mail::assertQueued(MagicLinkMail::class, function ($m) use ($user, &$signedUrl) {
+            if (! $m->user->is($user)) return false;
+            $signedUrl = $m->magicUrl;
             return true;
         });
-
-        $signedUrl = URL::temporarySignedRoute(
-            'auth.magic-link.consume',
-            now()->addMinutes(15),
-            ['token' => $captured],
-        );
 
         $this->get($signedUrl);
         $this->post(route('logout'));

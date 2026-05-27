@@ -9,6 +9,7 @@ use App\Models\Payment;
 use App\Models\Plan;
 use App\Models\Subscription;
 use App\Models\Tenant;
+use App\Support\Notifications\NotificationDispatcher;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
@@ -102,17 +103,28 @@ class BillingService
      */
     public function changePlan(Subscription $subscription, Plan $newPlan, array $context = []): Subscription
     {
-        if ((int) $newPlan->price_cents === 0) {
-            // Downgrade to free → cancel paid sub immediately, then start a
-            // local-only free row.
-            $this->cancel($subscription, 'downgrade_to_free', ['immediately' => true]);
+        $oldPlan = $subscription->plan;
 
-            return $this->recordFreeSubscription($subscription->tenant, $newPlan, $subscription->gateway);
-        }
+        $next = (int) $newPlan->price_cents === 0
+            ? (function () use ($subscription, $newPlan) {
+                // Downgrade to free → cancel paid sub immediately, then start a
+                // local-only free row.
+                $this->cancel($subscription, 'downgrade_to_free', ['immediately' => true]);
 
-        $gateway = $this->registry->subscriptions($subscription->gateway);
+                return $this->recordFreeSubscription($subscription->tenant, $newPlan, $subscription->gateway);
+            })()
+            : $this->registry->subscriptions($subscription->gateway)
+                ->changePlan($subscription, $newPlan, $context);
 
-        return $gateway->changePlan($subscription, $newPlan, $context);
+        $this->notifyTenantOwner($subscription->tenant, 'plan_changed', [
+            'oldPlan' => $oldPlan?->name,
+            'newPlan' => $newPlan->name,
+            'priceCents' => (int) $newPlan->price_cents,
+            'currency' => $newPlan->currency,
+            'billingPeriod' => $newPlan->billing_period,
+        ]);
+
+        return $next;
     }
 
     /**
@@ -482,7 +494,7 @@ class BillingService
      */
     public function recordPayment(Invoice $invoice, array $attributes): Payment
     {
-        return DB::transaction(function () use ($invoice, $attributes) {
+        $payment = DB::transaction(function () use ($invoice, $attributes) {
             $payment = new Payment;
             $payment->forceFill(array_merge([
                 'tenant_id' => $invoice->tenant_id,
@@ -504,6 +516,57 @@ class BillingService
 
             return $payment->fresh();
         });
+
+        // Notify the tenant owner. payment_receipt on success, payment_failed
+        // when the gateway reports failure. Done outside the DB transaction so
+        // a queue/email blip can't roll back the payment row.
+        $status = (string) ($attributes['status'] ?? '');
+        if ($status === 'succeeded') {
+            $this->notifyTenantOwner($invoice->tenant ?? $invoice->refresh()->tenant, 'payment_receipt', [
+                'invoiceNumber' => $invoice->number ?? ('#'.$invoice->id),
+                'invoiceUrl' => $invoice->hosted_invoice_url,
+                'amountCents' => (int) ($attributes['amount_cents'] ?? 0),
+                'currency' => $invoice->currency,
+                'paidAt' => now()->toDayDateTimeString(),
+                'description' => 'Subscription payment',
+            ]);
+        } elseif ($status === 'failed') {
+            $this->notifyTenantOwner($invoice->tenant ?? $invoice->refresh()->tenant, 'payment_failed', [
+                'invoiceNumber' => $invoice->number ?? ('#'.$invoice->id),
+                'amountCents' => (int) ($attributes['amount_cents'] ?? 0),
+                'currency' => $invoice->currency,
+                'reason' => $attributes['failure_message'] ?? null,
+                'updatePaymentUrl' => $invoice->hosted_invoice_url,
+            ]);
+        }
+
+        return $payment;
+    }
+
+    /**
+     * Resolve the tenant owner and dispatch a notification event.
+     * Silent no-op when the tenant has no owner (defensive).
+     *
+     * @param  array<string, mixed>  $data
+     */
+    private function notifyTenantOwner(?Tenant $tenant, string $event, array $data): void
+    {
+        if ($tenant === null) {
+            return;
+        }
+        $tenant->loadMissing('owner');
+        if ($tenant->owner === null) {
+            return;
+        }
+
+        app(NotificationDispatcher::class)
+            ->send($tenant->owner, $event, array_merge($data, [
+                'tenant' => [
+                    'id' => $tenant->id,
+                    'slug' => $tenant->slug,
+                    'name' => $tenant->name,
+                ],
+            ]));
     }
 
     /**

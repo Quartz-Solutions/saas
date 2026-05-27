@@ -4,8 +4,8 @@ namespace App\Listeners;
 
 use App\Models\LoginHistory;
 use App\Models\User;
-use App\Notifications\NewDeviceLoginAlert;
 use App\Support\Auth\LoginHistoryRecorder;
+use App\Support\Notifications\NotificationDispatcher;
 use Illuminate\Auth\Events\Login;
 use Illuminate\Http\Request;
 
@@ -50,10 +50,11 @@ class AlertOnNewDeviceLogin
             : ($latest->ip !== $ip || $latest->user_agent !== $ua);
 
         if ($isNewDevice) {
-            $user->notify(new NewDeviceLoginAlert(
-                ip: $ip,
-                userAgent: $ua !== '' ? $ua : 'unknown',
-            ));
+            app(NotificationDispatcher::class)->send($user, 'login_alert', [
+                'ip' => $ip,
+                'userAgent' => $ua !== '' ? $ua : 'unknown',
+                'when' => now()->toDayDateTimeString(),
+            ]);
         }
 
         $this->recorder->record(

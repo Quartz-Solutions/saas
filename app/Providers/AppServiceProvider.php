@@ -202,6 +202,10 @@ class AppServiceProvider extends ServiceProvider
     protected function configureLoginAlertListener(): void
     {
         Event::listen(Login::class, AlertOnNewDeviceLogin::class);
+        Event::listen(
+            \Laravel\Fortify\Events\RecoveryCodeReplaced::class,
+            \App\Listeners\NotifyTwoFactorRecoveryUsed::class,
+        );
     }
 
     /**

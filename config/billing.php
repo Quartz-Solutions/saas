@@ -50,7 +50,7 @@ return [
     */
 
     'checkout' => [
-        'timeout_minutes' => (int) env('CHECKOUT_TIMEOUT_MINUTES', 30),
+        'timeout_minutes' => (int) env('CHECKOUT_TIMEOUT_MINUTES', 120),
     ],
 
     /*

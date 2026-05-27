@@ -1,0 +1,372 @@
+/* =====================================================================
+   Modern SaaS email theme.
+     ┌── accent gradient stripe ─────────┐
+     │  [logo]  App Name                 │
+     ├───────────────────────────────────┤
+     │  H1 title / body in rounded card  │
+     │  + accent CTA buttons             │
+     ├───────────────────────────────────┤
+     │  © Year App Name · footer links   │
+     └───────────────────────────────────┘
+   ===================================================================== */
+
+/* Base */
+
+body,
+body *:not(html):not(style):not(br):not(tr):not(code) {
+    box-sizing: border-box;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+        Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji",
+        "Segoe UI Symbol";
+    position: relative;
+}
+
+body {
+    -webkit-text-size-adjust: none;
+    background-color: #f5f6fb;
+    color: #3f3f46;
+    height: 100%;
+    line-height: 1.55;
+    margin: 0;
+    padding: 0;
+    width: 100% !important;
+}
+
+p, ul, ol, blockquote {
+    line-height: 1.55;
+    text-align: start;
+}
+
+a {
+    color: #4f46e5;
+    text-decoration: none;
+}
+
+a img { border: none; }
+
+/* Typography */
+
+h1 {
+    color: #18181b;
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    margin-top: 0;
+    text-align: start;
+}
+
+h2 {
+    color: #18181b;
+    font-size: 17px;
+    font-weight: 600;
+    margin-top: 0;
+    text-align: start;
+}
+
+h3 {
+    color: #18181b;
+    font-size: 15px;
+    font-weight: 600;
+    margin-top: 0;
+    text-align: start;
+}
+
+p {
+    font-size: 15px;
+    line-height: 1.55;
+    margin-top: 0;
+    text-align: start;
+}
+
+p.sub {
+    font-size: 12px;
+    color: #71717a;
+}
+
+img { max-width: 100%; }
+
+/* Layout */
+
+.wrapper {
+    -premailer-cellpadding: 0;
+    -premailer-cellspacing: 0;
+    -premailer-width: 100%;
+    background-color: #f5f6fb;
+    margin: 0;
+    padding: 0;
+    width: 100%;
+}
+
+.content {
+    -premailer-cellpadding: 0;
+    -premailer-cellspacing: 0;
+    -premailer-width: 600px;
+    margin: 0 auto;
+    padding: 0;
+    width: 600px;
+}
+
+/* Header */
+
+.header {
+    padding: 0 0 16px 0;
+    text-align: center;
+}
+
+.header-stripe {
+    background: linear-gradient(90deg, #4f46e5 0%, #7c3aed 50%, #ec4899 100%);
+    border-top-left-radius: 14px;
+    border-top-right-radius: 14px;
+    height: 6px;
+    line-height: 6px;
+    font-size: 6px;
+}
+
+.header-band {
+    background-color: #ffffff;
+    border-top: 0;
+    padding: 22px 28px;
+    text-align: left;
+}
+
+.header-band img.logo {
+    height: 32px;
+    max-height: 36px;
+    vertical-align: middle;
+}
+
+.header-band .brand-name {
+    color: #18181b;
+    display: inline-block;
+    font-size: 16px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    vertical-align: middle;
+}
+
+.header-band .logo + .brand-name {
+    margin-left: 10px;
+}
+
+/* Body */
+
+.body {
+    -premailer-cellpadding: 0;
+    -premailer-cellspacing: 0;
+    -premailer-width: 100%;
+    background-color: #f5f6fb;
+    border: 0;
+    margin: 0;
+    padding: 0;
+    width: 100%;
+}
+
+.inner-body {
+    -premailer-cellpadding: 0;
+    -premailer-cellspacing: 0;
+    -premailer-width: 600px;
+    background-color: #ffffff;
+    border-radius: 0 0 14px 14px;
+    box-shadow: 0 2px 4px rgba(15, 23, 42, 0.04),
+        0 12px 36px rgba(15, 23, 42, 0.06);
+    margin: 0 auto;
+    padding: 0;
+    width: 600px;
+}
+
+/* Subcopy */
+
+.subcopy {
+    border-top: 1px solid #e4e4e7;
+    margin-top: 28px;
+    padding-top: 20px;
+}
+
+.subcopy p {
+    font-size: 13px;
+    color: #71717a;
+}
+
+/* Footer */
+
+.footer {
+    -premailer-cellpadding: 0;
+    -premailer-cellspacing: 0;
+    -premailer-width: 600px;
+    margin: 0 auto;
+    padding: 0;
+    text-align: center;
+    width: 600px;
+}
+
+.footer p {
+    color: #a1a1aa;
+    font-size: 12px;
+    text-align: center;
+}
+
+.footer a {
+    color: #71717a;
+    text-decoration: underline;
+}
+
+/* Tables */
+
+.table table {
+    -premailer-cellpadding: 0;
+    -premailer-cellspacing: 0;
+    -premailer-width: 100%;
+    margin: 20px auto;
+    width: 100%;
+}
+
+.table th {
+    border-bottom: 1px solid #e4e4e7;
+    margin: 0;
+    padding-bottom: 10px;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #71717a;
+    font-weight: 600;
+}
+
+.table td {
+    color: #3f3f46;
+    font-size: 14px;
+    line-height: 1.55;
+    margin: 0;
+    padding: 12px 0;
+    border-bottom: 1px solid #f1f1f4;
+}
+
+/* Buttons */
+
+.action {
+    -premailer-cellpadding: 0;
+    -premailer-cellspacing: 0;
+    -premailer-width: 100%;
+    margin: 28px auto;
+    padding: 0;
+    text-align: center;
+    width: 100%;
+}
+
+.button {
+    -webkit-text-size-adjust: none;
+    border-radius: 8px;
+    color: #ffffff;
+    display: inline-block;
+    overflow: hidden;
+    text-decoration: none;
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    padding: 12px 22px;
+    box-shadow: 0 1px 2px rgba(79, 70, 229, 0.25),
+        0 4px 12px rgba(79, 70, 229, 0.2);
+}
+
+.button-primary {
+    background-color: #4f46e5;
+    background-image: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+    border-top: 10px solid #4f46e5;
+    border-right: 18px solid #4f46e5;
+    border-bottom: 10px solid #4f46e5;
+    border-left: 18px solid #4f46e5;
+}
+
+.button-success,
+.button-green {
+    background-color: #16a34a;
+    background-image: linear-gradient(135deg, #16a34a 0%, #10b981 100%);
+    border-top: 10px solid #16a34a;
+    border-right: 18px solid #16a34a;
+    border-bottom: 10px solid #16a34a;
+    border-left: 18px solid #16a34a;
+    box-shadow: 0 1px 2px rgba(22, 163, 74, 0.25),
+        0 4px 12px rgba(22, 163, 74, 0.2);
+}
+
+.button-error,
+.button-red {
+    background-color: #e11d48;
+    background-image: linear-gradient(135deg, #e11d48 0%, #f43f5e 100%);
+    border-top: 10px solid #e11d48;
+    border-right: 18px solid #e11d48;
+    border-bottom: 10px solid #e11d48;
+    border-left: 18px solid #e11d48;
+    box-shadow: 0 1px 2px rgba(225, 29, 72, 0.25),
+        0 4px 12px rgba(225, 29, 72, 0.2);
+}
+
+/* Panels */
+
+.panel {
+    border-left: 4px solid #4f46e5;
+    margin: 21px 0;
+    background-color: #f7f7fb;
+    border-radius: 8px;
+}
+
+.panel-content {
+    background-color: transparent;
+    color: #3f3f46;
+    padding: 16px 18px;
+}
+
+.panel-content p {
+    color: #3f3f46;
+}
+
+.panel-item {
+    padding: 0;
+}
+
+.panel-item p:last-of-type {
+    margin-bottom: 0;
+    padding-bottom: 0;
+}
+
+/* Utilities */
+
+.break-all { word-break: break-all; }
+
+.content-cell {
+    max-width: 100vw;
+    padding: 32px;
+}
+
+/* Dark mode (Apple Mail + supporters) */
+
+@media (prefers-color-scheme: dark) {
+    body,
+    .wrapper,
+    .body {
+        background-color: #09090b !important;
+        color: #d4d4d8 !important;
+    }
+    .header-band,
+    .inner-body {
+        background-color: #18181b !important;
+    }
+    .header-band .brand-name,
+    h1, h2, h3 {
+        color: #fafafa !important;
+    }
+    p, .table td {
+        color: #d4d4d8 !important;
+    }
+    .subcopy, .table th {
+        border-color: #27272a !important;
+    }
+    .footer p {
+        color: #71717a !important;
+    }
+    .panel {
+        background-color: #1c1c20 !important;
+    }
+    .panel-content p {
+        color: #d4d4d8 !important;
+    }
+}

@@ -2,10 +2,10 @@
 
 namespace Tests\Feature\Auth;
 
+use App\Mail\EmailVerificationMail;
 use App\Models\User;
-use Illuminate\Auth\Notifications\VerifyEmail;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Facades\Mail;
 use Laravel\Fortify\Features;
 use Tests\TestCase;
 
@@ -22,7 +22,7 @@ class VerificationNotificationTest extends TestCase
 
     public function test_sends_verification_notification(): void
     {
-        Notification::fake();
+        Mail::fake();
 
         $user = User::factory()->unverified()->create();
 
@@ -30,12 +30,12 @@ class VerificationNotificationTest extends TestCase
             ->post(route('verification.send'))
             ->assertRedirect(route('home'));
 
-        Notification::assertSentTo($user, VerifyEmail::class);
+        Mail::assertQueued(EmailVerificationMail::class, fn ($m) => $m->user->is($user));
     }
 
     public function test_does_not_send_verification_notification_if_email_is_verified(): void
     {
-        Notification::fake();
+        Mail::fake();
 
         $user = User::factory()->create();
 
@@ -43,6 +43,6 @@ class VerificationNotificationTest extends TestCase
             ->post(route('verification.send'))
             ->assertRedirect(route('dashboard', absolute: false));
 
-        Notification::assertNothingSent();
+        Mail::assertNothingQueued();
     }
 }
