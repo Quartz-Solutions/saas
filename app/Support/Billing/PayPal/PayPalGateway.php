@@ -110,10 +110,7 @@ class PayPalGateway implements CheckoutGateway, PaymentGateway, SubscriptionGate
         }
 
         if ($isSubscription) {
-            $paypalPlanId = (string) ($plan->gateway_ids['paypal'] ?? '');
-            if ($paypalPlanId === '') {
-                throw new RuntimeException("Plan [{$plan->slug}] has no PayPal plan id (gateway_ids.paypal). Sync the Plan first (Phase 6).");
-            }
+            $paypalPlanId = $this->syncPlanForPayPal($plan);
 
             $payload = [
                 'plan_id' => $paypalPlanId,
@@ -168,6 +165,165 @@ class PayPalGateway implements CheckoutGateway, PaymentGateway, SubscriptionGate
         $this->persistResult($session, $result);
 
         return $result;
+    }
+
+    /**
+     * Ensure a PayPal Catalog Product + Billing Plan exist for the local
+     * Plan and return the PayPal Billing Plan id. Mirrors the pattern in
+     * StripeGateway::syncPriceForPlan — fingerprints price/currency/interval/
+     * trial, reuses an existing PayPal plan when the fingerprint matches,
+     * otherwise creates a fresh one (PayPal plans are immutable on those
+     * fields, so a change here mints a new plan; existing subscriptions
+     * stay on the old plan until they migrate).
+     */
+    public function syncPlanForPayPal(Plan $plan): string
+    {
+        if ((int) $plan->price_cents === 0) {
+            throw new RuntimeException("Plan [{$plan->slug}] is free — free plans skip checkout entirely.");
+        }
+
+        $existingIds = (array) ($plan->gateway_ids ?? []);
+        $existingPlanId = (string) ($existingIds['paypal'] ?? '');
+        $existingFingerprint = (string) ($existingIds['paypal_fingerprint'] ?? '');
+        $fingerprint = $this->paypalFingerprint($plan);
+
+        if ($existingPlanId !== '' && $existingFingerprint === $fingerprint) {
+            return $existingPlanId;
+        }
+
+        $productId = $this->ensureProductForPlan($plan);
+
+        $billingCycles = [];
+        if ((int) $plan->trial_days > 0) {
+            $billingCycles[] = [
+                'frequency' => ['interval_unit' => 'DAY', 'interval_count' => (int) $plan->trial_days],
+                'tenure_type' => 'TRIAL',
+                'sequence' => 1,
+                'total_cycles' => 1,
+                'pricing_scheme' => [
+                    'fixed_price' => ['value' => '0', 'currency_code' => strtoupper((string) $plan->currency)],
+                ],
+            ];
+        }
+        $billingCycles[] = [
+            'frequency' => [
+                'interval_unit' => $this->paypalIntervalUnit((string) $plan->billing_period),
+                'interval_count' => max(1, (int) $plan->billing_interval),
+            ],
+            'tenure_type' => 'REGULAR',
+            'sequence' => count($billingCycles) + 1,
+            'total_cycles' => 0,
+            'pricing_scheme' => [
+                'fixed_price' => [
+                    'value' => $this->formatAmount((int) $plan->price_cents),
+                    'currency_code' => strtoupper((string) $plan->currency),
+                ],
+            ],
+        ];
+
+        $response = Http::withToken($this->accessToken())
+            ->acceptJson()
+            ->asJson()
+            ->post($this->baseUrl().'/v1/billing/plans', [
+                'product_id' => $productId,
+                'name' => $plan->name,
+                'description' => $plan->description ?: $plan->name,
+                'status' => 'ACTIVE',
+                'billing_cycles' => $billingCycles,
+                'payment_preferences' => [
+                    'auto_bill_outstanding' => true,
+                    'setup_fee_failure_action' => 'CONTINUE',
+                    'payment_failure_threshold' => 3,
+                ],
+            ]);
+
+        if (! $response->successful()) {
+            throw new RuntimeException('PayPal create-plan failed: '.$response->status().' '.$response->body());
+        }
+
+        $planId = (string) ($response->json('id') ?? '');
+        if ($planId === '') {
+            throw new RuntimeException('PayPal create-plan response missing id: '.$response->body());
+        }
+
+        $plan->forceFill([
+            'gateway_ids' => array_merge($existingIds, [
+                'paypal' => $planId,
+                'paypal_product' => $productId,
+                'paypal_fingerprint' => $fingerprint,
+            ]),
+        ])->save();
+
+        return $planId;
+    }
+
+    /**
+     * Lazy-create (or reuse) a PayPal Catalog Product for the local Plan.
+     * Stored on Plan::gateway_ids.paypal_product. Idempotent.
+     */
+    protected function ensureProductForPlan(Plan $plan): string
+    {
+        $existingIds = (array) ($plan->gateway_ids ?? []);
+        $existingProductId = (string) ($existingIds['paypal_product'] ?? '');
+        if ($existingProductId !== '') {
+            try {
+                $response = Http::withToken($this->accessToken())
+                    ->acceptJson()
+                    ->get($this->baseUrl().'/v1/catalogs/products/'.$existingProductId);
+                if ($response->successful()) {
+                    return $existingProductId;
+                }
+            } catch (Throwable) {
+                // Fall through and recreate.
+            }
+        }
+
+        $response = Http::withToken($this->accessToken())
+            ->acceptJson()
+            ->asJson()
+            ->post($this->baseUrl().'/v1/catalogs/products', [
+                'name' => $plan->name,
+                'description' => $plan->description ?: $plan->name,
+                'type' => 'SERVICE',
+                'category' => 'SOFTWARE',
+            ]);
+
+        if (! $response->successful()) {
+            throw new RuntimeException('PayPal create-product failed: '.$response->status().' '.$response->body());
+        }
+
+        $productId = (string) ($response->json('id') ?? '');
+        if ($productId === '') {
+            throw new RuntimeException('PayPal create-product response missing id: '.$response->body());
+        }
+
+        return $productId;
+    }
+
+    protected function paypalIntervalUnit(string $period): string
+    {
+        return match ($period) {
+            'day' => 'DAY',
+            'week' => 'WEEK',
+            'year' => 'YEAR',
+            default => 'MONTH',
+        };
+    }
+
+    /**
+     * Fingerprint over the PayPal-immutable plan attributes so we know when
+     * to mint a new PayPal Plan instead of reusing the cached one.
+     */
+    protected function paypalFingerprint(Plan $plan): string
+    {
+        return hash('sha256', json_encode([
+            (int) $plan->price_cents,
+            strtoupper((string) $plan->currency),
+            (string) $plan->billing_period,
+            max(1, (int) $plan->billing_interval),
+            (int) $plan->trial_days,
+            $plan->name,
+        ]));
     }
 
     /**

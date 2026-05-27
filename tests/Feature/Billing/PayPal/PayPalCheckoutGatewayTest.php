@@ -82,6 +82,84 @@ class PayPalCheckoutGatewayTest extends TestCase
         );
     }
 
+    public function test_subscription_intent_syncs_paypal_product_and_billing_plan(): void
+    {
+        $owner = User::factory()->create();
+        $tenant = app(TenantService::class)->create($owner, ['name' => 'Acme']);
+
+        $plan = Plan::factory()->create([
+            'price_cents' => 2900,
+            'currency' => 'USD',
+            'billing_period' => 'month',
+            'billing_interval' => 1,
+            'trial_days' => 0,
+            'gateway_ids' => [],
+        ]);
+
+        $session = CheckoutSession::create([
+            'user_id' => $owner->id,
+            'tenant_id' => $tenant->id,
+            'plan_id' => $plan->id,
+            'intent' => CheckoutSession::INTENT_SUBSCRIPTION,
+            'status' => CheckoutSession::STATUS_PENDING,
+            'currency' => 'USD',
+            'amount_cents' => 2900,
+            'expires_at' => now()->addMinutes(30),
+        ]);
+
+        Http::fake([
+            '*/v1/oauth2/token' => Http::response(['access_token' => 'tok_test', 'expires_in' => 3600], 200),
+            '*/v1/catalogs/products' => Http::response(['id' => 'PROD-001'], 201),
+            '*/v1/billing/plans' => Http::response(['id' => 'P-PLAN-001', 'status' => 'ACTIVE'], 201),
+            '*/v1/billing/subscriptions' => Http::response([
+                'id' => 'I-SUB-001',
+                'status' => 'APPROVAL_PENDING',
+                'links' => [
+                    ['rel' => 'approve', 'href' => 'https://www.sandbox.paypal.com/webapps/billing/subscriptions?ba_token=BA-1'],
+                ],
+            ], 201),
+        ]);
+
+        $result = (new PayPalGateway)->initiateCheckout($session);
+
+        $this->assertSame('I-SUB-001', $result->gatewaySessionId);
+        $this->assertSame(CheckoutSession::KIND_REDIRECT, $result->kind);
+
+        $plan->refresh();
+        $this->assertSame('P-PLAN-001', $plan->gateway_ids['paypal'] ?? null);
+        $this->assertSame('PROD-001', $plan->gateway_ids['paypal_product'] ?? null);
+        $this->assertNotEmpty($plan->gateway_ids['paypal_fingerprint'] ?? null);
+    }
+
+    public function test_paypal_sync_is_idempotent_when_fingerprint_matches(): void
+    {
+        $plan = Plan::factory()->create([
+            'price_cents' => 2900,
+            'currency' => 'USD',
+            'billing_period' => 'month',
+            'billing_interval' => 1,
+            'trial_days' => 0,
+        ]);
+
+        Http::fake([
+            '*/v1/oauth2/token' => Http::response(['access_token' => 'tok_test', 'expires_in' => 3600], 200),
+            '*/v1/catalogs/products' => Http::response(['id' => 'PROD-X'], 201),
+            '*/v1/billing/plans' => Http::response(['id' => 'P-PLAN-X', 'status' => 'ACTIVE'], 201),
+            '*/v1/catalogs/products/PROD-X' => Http::response(['id' => 'PROD-X'], 200),
+        ]);
+
+        $gateway = new PayPalGateway;
+        $firstId = $gateway->syncPlanForPayPal($plan);
+        $secondId = $gateway->syncPlanForPayPal($plan->fresh());
+
+        $this->assertSame('P-PLAN-X', $firstId);
+        $this->assertSame('P-PLAN-X', $secondId);
+
+        // Second call should NOT have hit /v1/billing/plans again — only the
+        // oauth token + the initial product/plan create from call #1.
+        Http::assertSentCount(3);
+    }
+
     public function test_handle_webhook_completes_checkout_on_order_approved(): void
     {
         $owner = User::factory()->create();

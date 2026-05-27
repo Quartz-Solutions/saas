@@ -1,6 +1,5 @@
 import { Head, Link, useForm } from '@inertiajs/react';
 import { ArrowLeft, ArrowRight, Check, CreditCard, ExternalLink, Loader2 } from 'lucide-react';
-import { useState } from 'react';
 import Heading from '@/components/heading';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -65,16 +64,15 @@ const formatMoney = (cents: number, currency: string) => {
 };
 
 export default function CheckoutShow({ session, gateways }: Props) {
-    const [selected, setSelected] = useState<string>(gateways[0]?.id ?? '');
-    const { post, processing, errors } = useForm({ gateway: selected });
+    const { data, setData, post, processing, errors } = useForm({
+        gateway: gateways[0]?.id ?? '',
+    });
 
-    const pick = (id: string) => {
-        setSelected(id);
-    };
+    const pick = (id: string) => setData('gateway', id);
 
     const submit = (e: React.FormEvent) => {
         e.preventDefault();
-        post(`/checkout/${session.public_id}/pay`, { data: { gateway: selected } } as never);
+        post(`/checkout/${session.public_id}/pay`);
     };
 
     // After gateway pick, status flips to awaiting_payment and the server
@@ -130,7 +128,7 @@ export default function CheckoutShow({ session, gateways }: Props) {
                                             <GatewayTile
                                                 key={g.id}
                                                 gateway={g}
-                                                selected={selected === g.id}
+                                                selected={data.gateway === g.id}
                                                 onSelect={() => pick(g.id)}
                                             />
                                         ))}
@@ -139,7 +137,7 @@ export default function CheckoutShow({ session, gateways }: Props) {
                                         ) : null}
                                         <Button
                                             type="submit"
-                                            disabled={processing || !selected}
+                                            disabled={processing || !data.gateway}
                                             className="w-full"
                                             size="lg"
                                         >
@@ -148,7 +146,7 @@ export default function CheckoutShow({ session, gateways }: Props) {
                                             ) : (
                                                 <ArrowRight className="size-4" />
                                             )}
-                                            Continue to {gateways.find((g) => g.id === selected)?.name ?? 'payment'}
+                                            Continue to {gateways.find((g) => g.id === data.gateway)?.name ?? 'payment'}
                                         </Button>
                                     </form>
                                 )}

@@ -118,6 +118,33 @@ class CheckoutFlowTest extends TestCase
             ->assertSessionHasErrors('plan_slug');
     }
 
+    public function test_show_with_canceled_query_reverts_awaiting_session_to_pending(): void
+    {
+        [$user] = $this->userWithTenant();
+        $this->actingAs($user)->post('/checkout/start', ['plan_slug' => 'pro']);
+        $session = CheckoutSession::query()->where('user_id', $user->id)->firstOrFail();
+
+        // Simulate a driver that already initiated checkout (e.g. Stripe).
+        $session->forceFill([
+            'status' => CheckoutSession::STATUS_AWAITING_PAYMENT,
+            'gateway' => 'stripe',
+            'gateway_session_id' => 'cs_test_stale',
+            'result_kind' => CheckoutSession::KIND_REDIRECT,
+            'result_payload' => ['url' => 'https://checkout.stripe.com/x'],
+        ])->save();
+
+        $this->actingAs($user)
+            ->get('/checkout/'.$session->public_id.'?canceled=1')
+            ->assertRedirect('/checkout/'.$session->public_id);
+
+        $session->refresh();
+        $this->assertSame(CheckoutSession::STATUS_PENDING, $session->status);
+        $this->assertNull($session->gateway);
+        $this->assertNull($session->gateway_session_id);
+        $this->assertNull($session->result_kind);
+        $this->assertNull($session->result_payload);
+    }
+
     public function test_cancel_marks_session_canceled(): void
     {
         [$user, $tenant] = $this->userWithTenant();

@@ -13,6 +13,7 @@ use App\Support\Billing\CheckoutGateway;
 use App\Support\Billing\GatewayRegistry;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
 use Throwable;
@@ -57,12 +58,39 @@ class CheckoutController extends Controller
         return redirect()->route('checkout.show', ['session' => $session->public_id]);
     }
 
-    public function show(string $session): Response|RedirectResponse
+    public function show(string $session, Request $request): Response|RedirectResponse
     {
         $session = $this->loadSession($session);
 
         if ($session->status === CheckoutSession::STATUS_COMPLETED) {
             return redirect()->route('tenants.dashboard', ['tenantSlug' => $session->tenant->slug]);
+        }
+
+        // Gateway sent the customer back with ?canceled=1 (Stripe's
+        // cancel_url, PayPal cancel, etc.). Revert the session to PENDING +
+        // clear the stored gateway state so the picker re-renders. Without
+        // this, React's CheckoutNextStep re-reads the stale result_kind +
+        // result_payload and immediately bounces the user back to the
+        // gateway they tried to escape from.
+        if (
+            $request->boolean('canceled')
+            && $session->status === CheckoutSession::STATUS_AWAITING_PAYMENT
+        ) {
+            $session->forceFill([
+                'status' => CheckoutSession::STATUS_PENDING,
+                'gateway' => null,
+                'gateway_session_id' => null,
+                'result_kind' => null,
+                'result_payload' => null,
+            ])->save();
+            $session = $session->fresh();
+
+            Inertia::flash('toast', [
+                'type' => 'info',
+                'message' => __('Checkout canceled. Pick a different option to try again.'),
+            ]);
+
+            return redirect()->route('checkout.show', ['session' => $session->public_id]);
         }
 
         if ($session->isTerminal()) {
@@ -127,8 +155,15 @@ class CheckoutController extends Controller
         } catch (Throwable $e) {
             report($e);
 
-            return $this->bail($session, __('Could not start checkout with :gateway. Please try a different option.', [
+            // Surface the driver's own message — it's almost always a config
+            // problem (missing credentials, missing per-plan gateway id, etc.)
+            // that the admin needs to see to know what to fix. Falls back to
+            // a generic line if the exception has no message.
+            $detail = trim($e->getMessage());
+
+            return $this->bail($session, __(':gateway could not start checkout: :detail', [
                 'gateway' => $gateway->displayName(),
+                'detail' => $detail !== '' ? $detail : __('please try a different option.'),
             ]));
         }
 
