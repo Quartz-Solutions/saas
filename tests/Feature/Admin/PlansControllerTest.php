@@ -253,20 +253,6 @@ class PlansControllerTest extends TestCase
             );
     }
 
-    public function test_subscribe_request_validates_plan_exists_in_db(): void
-    {
-        // Bare SubscribeRequest validation — no plan in DB → should fail.
-        $owner = User::factory()->create();
-        $tenant = app(TenantService::class)->create($owner, ['name' => 'Acme']);
-
-        $this->actingAs($owner)
-            ->from(route('tenants.billing.plans', ['tenantSlug' => $tenant->slug]))
-            ->post(route('tenants.billing.subscribe', ['tenantSlug' => $tenant->slug]), [
-                'plan' => 'ghost-plan',
-            ])
-            ->assertSessionHasErrors('plan');
-    }
-
     public function test_unknown_feature_slug_is_rejected(): void
     {
         $admin = $this->makeSuperAdmin();

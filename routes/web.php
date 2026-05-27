@@ -181,8 +181,6 @@ Route::middleware(['auth', 'verified', 'tenant', 'tenant.member'])
 
         Route::get('billing/plans', [BillingController::class, 'plans'])
             ->name('billing.plans');
-        Route::post('billing/subscribe', [BillingController::class, 'subscribe'])
-            ->name('billing.subscribe');
         Route::post('billing/cancel', [BillingController::class, 'cancel'])
             ->name('billing.cancel');
         Route::post('billing/resume', [BillingController::class, 'resume'])

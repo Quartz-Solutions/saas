@@ -5,7 +5,6 @@ namespace App\Http\Controllers\Billing;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Billing\CancelSubscriptionRequest;
 use App\Http\Requests\Billing\ResumeSubscriptionRequest;
-use App\Http\Requests\Billing\SubscribeRequest;
 use App\Models\Plan;
 use App\Models\Tenant;
 use App\Support\Billing\BillingService;
@@ -80,33 +79,6 @@ class BillingController extends Controller
             ])->all(),
             'default_gateway' => config('billing.default_gateway'),
         ]);
-    }
-
-    /**
-     * Subscribe to / upgrade to a plan.
-     */
-    public function subscribe(SubscribeRequest $request, string $tenantSlug): RedirectResponse
-    {
-        $tenant = $this->currentTenant();
-        $plan = Plan::query()
-            ->where('slug', $request->string('plan'))
-            ->where('is_active', true)
-            ->firstOrFail();
-        $gatewayId = $request->string('gateway')->toString() ?: (string) config('billing.default_gateway');
-
-        $current = $this->billing->currentSubscription($tenant);
-
-        if ($current !== null) {
-            $this->billing->changePlan($current, $plan);
-            $message = __('Plan updated.');
-        } else {
-            $this->billing->subscribeToPlan($tenant, $plan, $gatewayId);
-            $message = __('Subscription started.');
-        }
-
-        Inertia::flash('toast', ['type' => 'success', 'message' => $message]);
-
-        return to_route('tenants.billing.plans', ['tenantSlug' => $tenantSlug]);
     }
 
     /**

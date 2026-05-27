@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Billing;
 
+use App\Models\CheckoutSession;
 use App\Models\User;
 use App\Support\Tenancy\TenantService;
 use Database\Seeders\PlansSeeder;
@@ -56,7 +57,7 @@ class PlanPickerTest extends TestCase
         $this->get('/t/acme/billing/plans')->assertRedirect();
     }
 
-    public function test_subscribe_to_free_plan_records_subscription(): void
+    public function test_picking_free_plan_routes_through_checkout_and_creates_subscription(): void
     {
         $this->seed(PlansSeeder::class);
 
@@ -64,44 +65,36 @@ class PlanPickerTest extends TestCase
         $tenant = app(TenantService::class)->create($owner, ['name' => 'Acme']);
 
         $this->actingAs($owner)
-            ->post(route('tenants.billing.subscribe', ['tenantSlug' => $tenant->slug]), [
-                'plan' => 'free',
-                'gateway' => 'stripe',
+            ->post('/checkout/start', [
+                'plan_slug' => 'free',
+                'tenant_id' => $tenant->id,
             ])
-            ->assertRedirect(route('tenants.billing.plans', ['tenantSlug' => $tenant->slug]));
+            ->assertRedirect(route('tenants.dashboard', ['tenantSlug' => $tenant->slug]));
 
         $this->assertDatabaseHas('subscriptions', [
             'tenant_id' => $tenant->id,
             'status' => 'active',
             'unit_amount_cents' => 0,
         ]);
+
+        $this->assertDatabaseHas('checkout_sessions', [
+            'tenant_id' => $tenant->id,
+            'status' => CheckoutSession::STATUS_COMPLETED,
+            'gateway' => 'free',
+        ]);
     }
 
-    public function test_subscribe_validates_plan_slug(): void
+    public function test_picking_unknown_plan_fails_validation_at_checkout_start(): void
     {
         $owner = User::factory()->create();
         $tenant = app(TenantService::class)->create($owner, ['name' => 'Acme']);
 
         $this->actingAs($owner)
             ->from(route('tenants.billing.plans', ['tenantSlug' => $tenant->slug]))
-            ->post(route('tenants.billing.subscribe', ['tenantSlug' => $tenant->slug]), [
-                'plan' => 'bogus',
+            ->post('/checkout/start', [
+                'plan_slug' => 'bogus',
+                'tenant_id' => $tenant->id,
             ])
-            ->assertSessionHasErrors('plan');
-    }
-
-    public function test_subscribe_requires_owner_or_admin_role(): void
-    {
-        $owner = User::factory()->create();
-        $tenant = app(TenantService::class)->create($owner, ['name' => 'Acme']);
-
-        $member = User::factory()->create();
-        app(TenantService::class)->invite($tenant, $owner, $member->email, 'Member', autoAttach: true);
-
-        $this->actingAs($member)
-            ->post(route('tenants.billing.subscribe', ['tenantSlug' => $tenant->slug]), [
-                'plan' => 'free',
-            ])
-            ->assertForbidden();
+            ->assertSessionHasErrors('plan_slug');
     }
 }
