@@ -4,7 +4,10 @@ namespace App\Http\Controllers\Billing;
 
 use App\Http\Controllers\Controller;
 use App\Models\Invoice;
+use App\Support\Billing\GatewayRegistry;
+use App\Support\Billing\Stripe\StripeGateway;
 use Barryvdh\DomPDF\Facade\Pdf;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
@@ -91,14 +94,26 @@ class InvoicesController extends Controller
     }
 
     /**
-     * Stream a PDF of a single invoice. Refuses cross-tenant access.
+     * Download a PDF of a single invoice. Refuses cross-tenant access.
+     *
+     * Prefers the gateway-hosted PDF (signed, branded) when the driver
+     * exposes one; falls back to a locally-rendered DomPDF.
      */
-    public function pdf(Request $request, string $tenantSlug, Invoice $invoice): HttpResponse
+    public function pdf(Request $request, string $tenantSlug, Invoice $invoice, GatewayRegistry $registry): HttpResponse|RedirectResponse
     {
         $tenant = app('currentTenant');
 
         if ($invoice->tenant_id !== $tenant->id) {
             throw new AccessDeniedHttpException('Invoice does not belong to this tenant.');
+        }
+
+        // Prefer the gateway-hosted PDF when available.
+        $gateway = $registry->find((string) $invoice->gateway);
+        if ($gateway instanceof StripeGateway) {
+            $hostedUrl = $gateway->gatewayPdfUrl($invoice);
+            if (filled($hostedUrl)) {
+                return redirect()->away($hostedUrl);
+            }
         }
 
         $invoice->loadMissing(['tenant', 'lines', 'subscription.plan']);

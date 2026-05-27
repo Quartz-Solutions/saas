@@ -146,12 +146,14 @@ export default function BillingInvoices({ invoices, tableState }: Props) {
             render: (row) => (
                 <div className="flex items-center justify-end gap-1.5">
                     <Button asChild variant="ghost" size="sm" title="Download PDF">
-                        <Link
-                            href={tenantRoutes.billing.invoices.pdf({ tenantSlug, invoice: row.id })}
+                        <a
+                            href={tenantRoutes.billing.invoices.pdf({ tenantSlug, invoice: row.id }).url}
+                            target="_blank"
+                            rel="noreferrer noopener"
                         >
                             <Download className="size-4" />
                             <span className="sr-only">Download PDF</span>
-                        </Link>
+                        </a>
                     </Button>
                     {row.hosted_invoice_url && (
                         <Button asChild variant="ghost" size="sm" title="Open at gateway">

@@ -407,6 +407,28 @@ class StripeGateway implements CheckoutGateway, PaymentGateway, SubscriptionGate
         return $this->upsertPaymentFromIntent($intent);
     }
 
+    /**
+     * Resolve the Stripe-hosted PDF URL for a local Invoice. The URL is
+     * signed and short-lived (Stripe rotates the signature), so we fetch
+     * it on demand rather than persisting it.
+     */
+    public function gatewayPdfUrl(Invoice $invoice): ?string
+    {
+        if ($invoice->gateway !== 'stripe' || ! filled($invoice->gateway_invoice_id)) {
+            return null;
+        }
+
+        try {
+            $stripeInvoice = $this->client->invoices->retrieve($invoice->gateway_invoice_id);
+
+            return $stripeInvoice->invoice_pdf ?: null;
+        } catch (Throwable $e) {
+            report($e);
+
+            return null;
+        }
+    }
+
     public function handleWebhook(Request $request, WebhookEvent $event): WebhookEvent
     {
         $signature = $request->header('Stripe-Signature') ?? '';

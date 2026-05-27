@@ -57,7 +57,7 @@ class CheckoutController extends Controller
         return redirect()->route('checkout.show', ['session' => $session->public_id]);
     }
 
-    public function show(string $session): Response | RedirectResponse
+    public function show(string $session): Response|RedirectResponse
     {
         $session = $this->loadSession($session);
 
@@ -87,7 +87,7 @@ class CheckoutController extends Controller
         ]);
     }
 
-    public function pay(PayCheckoutRequest $request, string $session): RedirectResponse | Response
+    public function pay(PayCheckoutRequest $request, string $session): RedirectResponse|Response
     {
         $session = $this->loadSession($session);
 
@@ -146,7 +146,7 @@ class CheckoutController extends Controller
         return redirect()->route('checkout.show', ['session' => $session->public_id]);
     }
 
-    public function return(string $session): RedirectResponse | Response
+    public function return(string $session): RedirectResponse|Response
     {
         $session = $this->loadSession($session);
 
