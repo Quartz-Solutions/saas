@@ -2,18 +2,25 @@
 
 namespace App\Support\Billing\Geidea;
 
+use App\Models\CheckoutSession;
 use App\Models\Payment;
 use App\Models\Plan;
 use App\Models\Subscription;
 use App\Models\Tenant;
 use App\Models\WebhookEvent;
+use App\Support\Billing\Checkout\CheckoutResult;
+use App\Support\Billing\Checkout\CheckoutService;
+use App\Support\Billing\Checkout\RedirectCheckout;
+use App\Support\Billing\CheckoutGateway;
 use App\Support\Billing\PaymentGateway;
 use App\Support\Billing\SubscriptionGateway;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use RuntimeException;
+use Throwable;
 
 /**
  * Geidea driver — Phase 3.2 scaffold.
@@ -40,7 +47,7 @@ use RuntimeException;
  *
  * Charge / refund / subscription flows are stubbed and throw until Phase 3.2.
  */
-class GeideaGateway implements PaymentGateway, SubscriptionGateway
+class GeideaGateway implements CheckoutGateway, PaymentGateway, SubscriptionGateway
 {
     public function id(): string
     {
@@ -50,6 +57,82 @@ class GeideaGateway implements PaymentGateway, SubscriptionGateway
     public function displayName(): string
     {
         return 'Geidea';
+    }
+
+    // ------------------------------------------------------------------
+    // CheckoutGateway
+    // ------------------------------------------------------------------
+
+    /** @return array<int, string> */
+    public function supportedCurrencies(): array
+    {
+        return ['SAR', 'AED', 'EGP', 'USD', 'EUR', 'GBP', 'KWD', 'BHD', 'QAR', 'OMR'];
+    }
+
+    public function supportsSubscriptions(): bool
+    {
+        return true;
+    }
+
+    /**
+     * Create a Geidea Hosted Payment Page session for the given local
+     * CheckoutSession. Idempotent: a session already carrying a
+     * gateway_session_id and an awaiting_payment status reuses the stored
+     * redirect URL instead of round-tripping again.
+     */
+    public function initiateCheckout(CheckoutSession $session): CheckoutResult
+    {
+        if (filled($session->gateway_session_id)
+            && $session->status === CheckoutSession::STATUS_AWAITING_PAYMENT
+            && is_array($session->result_payload)
+            && filled($session->result_payload['url'] ?? null)
+        ) {
+            return new RedirectCheckout(
+                gatewaySessionId: (string) $session->gateway_session_id,
+                url: (string) $session->result_payload['url'],
+            );
+        }
+
+        $body = [
+            'amount' => ((int) $session->amount_cents) / 100,
+            'currency' => strtoupper((string) $session->currency),
+            'merchantPublicKey' => (string) config('billing.gateways.geidea.public_key'),
+            'merchantReferenceId' => $session->public_id,
+            'callbackUrl' => route('webhooks.gateway', ['gateway' => $this->id()]),
+            'returnUrl' => route('checkout.return', ['session' => $session->public_id]),
+            'language' => 'en',
+        ];
+
+        $response = $this->http()
+            ->post('/payment-intent/api/v2/direct/session', $body)
+            ->throw()
+            ->json();
+
+        $sessionId = (string) ($response['session']['id'] ?? '');
+        $redirectUrl = (string) (
+            $response['session']['redirectUrl']
+            ?? $response['session']['url']
+            ?? ''
+        );
+
+        if ($sessionId === '' || $redirectUrl === '') {
+            throw new RuntimeException('Geidea: initiateCheckout response missing session.id or redirect URL');
+        }
+
+        $result = new RedirectCheckout(
+            gatewaySessionId: $sessionId,
+            url: $redirectUrl,
+        );
+
+        $session->forceFill([
+            'gateway' => $this->id(),
+            'gateway_session_id' => $result->gatewaySessionId,
+            'status' => CheckoutSession::STATUS_AWAITING_PAYMENT,
+            'result_kind' => $result->kind,
+            'result_payload' => $result->toPayload(),
+        ])->save();
+
+        return $result;
     }
 
     // ------------------------------------------------------------------
@@ -299,12 +382,94 @@ class GeideaGateway implements PaymentGateway, SubscriptionGateway
             throw new RuntimeException('Geidea signature verification failed');
         }
 
-        $event->forceFill([
-            'status' => 'processed',
-            'processed_at' => now(),
-        ])->save();
+        try {
+            $this->dispatchEvent($payload);
+
+            $event->forceFill([
+                'status' => 'processed',
+                'processed_at' => now(),
+            ])->save();
+        } catch (Throwable $e) {
+            $event->forceFill([
+                'status' => 'failed',
+                'error_message' => $e->getMessage(),
+                'processing_attempts' => (int) $event->processing_attempts + 1,
+            ])->save();
+
+            Log::warning('Geidea webhook processing failed', [
+                'event_id' => $event->id,
+                'gateway_event_id' => $event->gateway_event_id,
+                'error' => $e->getMessage(),
+            ]);
+        }
 
         return $event->fresh();
+    }
+
+    /**
+     * Route the verified payload to the matching handler. Geidea's callback
+     * surfaces success via `eventType=Order.Success` and/or `responseCode=000`.
+     *
+     * @param  array<string, mixed>  $payload
+     */
+    private function dispatchEvent(array $payload): void
+    {
+        $eventType = (string) ($this->extract($payload, ['eventType', 'EventType', 'order.eventType']) ?? '');
+        $responseCode = (string) ($this->extract($payload, ['responseCode', 'ResponseCode', 'order.responseCode']) ?? '');
+
+        if ($eventType === 'Order.Success' || $responseCode === '000') {
+            $this->onCheckoutCompleted($payload);
+        }
+    }
+
+    /**
+     * Reconcile a successful Geidea callback with its local CheckoutSession,
+     * matched via gateway_session_id (Geidea session.id).
+     *
+     * @param  array<string, mixed>  $payload
+     */
+    private function onCheckoutCompleted(array $payload): void
+    {
+        $sessionId = (string) ($this->extract($payload, [
+            'sessionId',
+            'SessionId',
+            'session.id',
+            'order.sessionId',
+        ]) ?? '');
+
+        if ($sessionId === '') {
+            Log::warning('Geidea Order.Success received with no session id', ['payload_keys' => array_keys($payload)]);
+
+            return;
+        }
+
+        $session = CheckoutSession::query()
+            ->where('gateway', $this->id())
+            ->where('gateway_session_id', $sessionId)
+            ->first();
+
+        if ($session === null) {
+            Log::warning('Geidea Order.Success: no matching CheckoutSession', ['session_id' => $sessionId]);
+
+            return;
+        }
+
+        if ($session->status === CheckoutSession::STATUS_COMPLETED) {
+            return; // idempotent re-delivery
+        }
+
+        $orderId = (string) ($this->extract($payload, ['orderId', 'OrderId', 'order.orderId', 'order.id']) ?? '');
+        $amount = $this->extract($payload, ['orderAmount', 'OrderAmount', 'order.amount', 'amount']);
+        $currency = strtoupper((string) ($this->extract($payload, ['orderCurrency', 'OrderCurrency', 'order.currency', 'currency']) ?? $session->currency));
+        $amountCents = $amount !== null ? (int) round(((float) $amount) * 100) : (int) $session->amount_cents;
+
+        app(CheckoutService::class)->complete($session, [
+            'gateway_payment_id' => $orderId !== '' ? $orderId : $sessionId,
+            'amount_paid_cents' => $amountCents,
+            'paid_amount_cents' => $amountCents,
+            'currency' => $currency,
+            'invoice_number' => 'INV-'.$session->public_id,
+        ]);
     }
 
     /**

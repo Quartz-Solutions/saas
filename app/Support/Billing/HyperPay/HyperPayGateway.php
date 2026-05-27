@@ -2,16 +2,22 @@
 
 namespace App\Support\Billing\HyperPay;
 
+use App\Models\CheckoutSession;
 use App\Models\Payment;
 use App\Models\Plan;
 use App\Models\Subscription;
 use App\Models\Tenant;
 use App\Models\WebhookEvent;
+use App\Support\Billing\Checkout\CheckoutResult;
+use App\Support\Billing\Checkout\CheckoutService;
+use App\Support\Billing\Checkout\WidgetCheckout;
+use App\Support\Billing\CheckoutGateway;
 use App\Support\Billing\PaymentGateway;
 use App\Support\Billing\SubscriptionGateway;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use RuntimeException;
 
@@ -60,7 +66,7 @@ use RuntimeException;
  * requires the merchant to be PCI DSS Level 1 certified — default to the
  * COPYandPAY widget and only enable raw-card after a compliance review.
  */
-class HyperPayGateway implements PaymentGateway, SubscriptionGateway
+class HyperPayGateway implements CheckoutGateway, PaymentGateway, SubscriptionGateway
 {
     public function id(): string
     {
@@ -70,6 +76,114 @@ class HyperPayGateway implements PaymentGateway, SubscriptionGateway
     public function displayName(): string
     {
         return 'HyperPay';
+    }
+
+    // ------------------------------------------------------------------
+    // CheckoutGateway
+    // ------------------------------------------------------------------
+
+    /**
+     * @return array<int, string>
+     */
+    public function supportedCurrencies(): array
+    {
+        return ['SAR', 'AED', 'QAR', 'USD', 'EUR', 'GBP', 'JOD', 'EGP', 'BHD', 'KWD', 'OMR'];
+    }
+
+    public function supportsSubscriptions(): bool
+    {
+        return true;
+    }
+
+    /**
+     * Prepare an OPPWA COPYandPAY checkout for the given session. HyperPay
+     * checkout ids expire after ~30 minutes — if the stored one is still
+     * within its window, reuse it; otherwise create a fresh one.
+     */
+    public function initiateCheckout(CheckoutSession $session): CheckoutResult
+    {
+        $plan = $session->plan;
+        if ($plan === null) {
+            throw new RuntimeException("Checkout session {$session->public_id} has no plan.");
+        }
+
+        $method = (string) (($session->metadata['payment_method'] ?? null) ?: 'card');
+        $entityId = $this->entityId($method);
+        if ($entityId === null) {
+            throw new RuntimeException("HyperPay: no entityId configured for channel [{$method}].");
+        }
+
+        $brands = (string) (($session->metadata['brands'] ?? null) ?: 'VISA MASTER MADA');
+        $returnUrl = route('checkout.return', ['session' => $session->public_id]);
+
+        // Idempotent re-call: if a non-expired checkout id is already on
+        // the session, return the same widget result without re-hitting
+        // /v1/checkouts. HyperPay checkout ids expire after ~30 min.
+        if (filled($session->gateway_session_id)
+            && $session->status === CheckoutSession::STATUS_AWAITING_PAYMENT
+            && $session->expires_at !== null
+            && $session->expires_at->isFuture()
+        ) {
+            return new WidgetCheckout(
+                gatewaySessionId: (string) $session->gateway_session_id,
+                scriptUrl: $this->baseUrl().'/v1/paymentWidgets.js?checkoutId='.$session->gateway_session_id,
+                widgetConfig: [
+                    'brands' => $brands,
+                    'shopperResultUrl' => $returnUrl,
+                ],
+                expiresAt: $session->expires_at->getTimestamp(),
+            );
+        }
+
+        $body = [
+            'entityId' => $entityId,
+            'amount' => number_format($session->amount_cents / 100, 2, '.', ''),
+            'currency' => strtoupper((string) $session->currency),
+            'paymentType' => 'DB',
+            'merchantTransactionId' => $session->public_id,
+            'shopperResultUrl' => $returnUrl,
+        ];
+
+        if ($session->intent === CheckoutSession::INTENT_SUBSCRIPTION) {
+            // Tokenize on first charge so MIT renewals can reuse the registration id.
+            $body['createRegistration'] = 'true';
+        }
+
+        $response = $this->http()
+            ->post('/v1/checkouts', $body)
+            ->throw()
+            ->json();
+
+        $checkoutId = (string) ($response['id'] ?? '');
+        if ($checkoutId === '') {
+            throw new RuntimeException('HyperPay: Prepare Checkout response missing id');
+        }
+
+        $scriptUrl = $this->baseUrl().'/v1/paymentWidgets.js?checkoutId='.$checkoutId;
+        $widgetConfig = [
+            'brands' => $brands,
+            'shopperResultUrl' => $returnUrl,
+        ];
+
+        $expiresAt = now()->addMinutes(30);
+
+        $result = new WidgetCheckout(
+            gatewaySessionId: $checkoutId,
+            scriptUrl: $scriptUrl,
+            widgetConfig: $widgetConfig,
+            expiresAt: $expiresAt->getTimestamp(),
+        );
+
+        $session->forceFill([
+            'gateway' => $this->id(),
+            'gateway_session_id' => $checkoutId,
+            'status' => CheckoutSession::STATUS_AWAITING_PAYMENT,
+            'result_kind' => $result->kind,
+            'result_payload' => $result->toPayload(),
+            'expires_at' => $expiresAt,
+        ])->save();
+
+        return $result;
     }
 
     // ------------------------------------------------------------------
@@ -231,21 +345,108 @@ class HyperPayGateway implements PaymentGateway, SubscriptionGateway
         }
 
         // HyperPay categorises webhook events via a top-level `type`
-        // field: PAYMENT, REGISTRATION, SCHEDULE, RISK. The wiring
-        // task in Phase 3.3 will fan these out to per-type handlers
-        // (e.g. PAYMENT → reconcile payment status, REGISTRATION →
-        // persist a new card token). For now we just persist the
-        // decoded payload + type on the WebhookEvent row.
+        // field: PAYMENT, REGISTRATION, SCHEDULE, RISK. PAYMENT events
+        // with a success result code reconcile the CheckoutSession.
         $type = (string) ($payload['type'] ?? '');
 
         $event->forceFill([
             'event_type' => $type !== '' ? $type : $event->event_type,
             'payload' => $payload,
-            'status' => 'processed',
-            'processed_at' => now(),
         ])->save();
 
+        try {
+            if ($type === 'PAYMENT') {
+                $this->onPaymentEvent($payload);
+            }
+
+            $event->forceFill([
+                'status' => 'processed',
+                'processed_at' => now(),
+            ])->save();
+        } catch (\Throwable $e) {
+            $event->forceFill([
+                'status' => 'failed',
+                'error_message' => $e->getMessage(),
+                'processing_attempts' => (int) $event->processing_attempts + 1,
+            ])->save();
+
+            Log::warning('HyperPay webhook processing failed', [
+                'event_id' => $event->id,
+                'gateway_event_id' => $event->gateway_event_id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+
         return $event->fresh();
+    }
+
+    /**
+     * Reconcile a successful PAYMENT webhook with the local CheckoutSession.
+     *
+     * HyperPay/OPPWA success codes per docs:
+     *   - 000.000.*       — transaction succeeded
+     *   - 000.100.1*      — succeeded (manual review / honoured)
+     *   - 000.[36]*       — succeeded (chargeback warning / review)
+     *
+     * @param  array<string, mixed>  $payload
+     */
+    private function onPaymentEvent(array $payload): void
+    {
+        $body = is_array($payload['payload'] ?? null) ? $payload['payload'] : $payload;
+
+        $resultCode = (string) ($body['result']['code'] ?? '');
+        if (! preg_match('/^(000\.000\.|000\.100\.1|000\.[36])/', $resultCode)) {
+            return;
+        }
+
+        // OPPWA puts the original checkout id back on the transaction
+        // notification as either `ndc` (network data carrier — same value)
+        // or `id`. Prefer ndc; fall back to id.
+        $checkoutId = (string) ($body['ndc'] ?? $body['id'] ?? '');
+        if ($checkoutId === '') {
+            Log::warning('HyperPay PAYMENT success received with no checkout id', [
+                'payload_keys' => array_keys($body),
+            ]);
+
+            return;
+        }
+
+        $session = CheckoutSession::query()
+            ->where('gateway', $this->id())
+            ->where('gateway_session_id', $checkoutId)
+            ->first();
+
+        if ($session === null) {
+            Log::warning('HyperPay PAYMENT success: no matching CheckoutSession', [
+                'checkout_id' => $checkoutId,
+            ]);
+
+            return;
+        }
+
+        if ($session->status === CheckoutSession::STATUS_COMPLETED) {
+            return;
+        }
+
+        $paymentId = (string) ($body['id'] ?? $checkoutId);
+        $amount = $body['amount'] ?? null;
+        $currency = strtoupper((string) ($body['currency'] ?? $session->currency));
+        $amountCents = $amount !== null ? (int) round(((float) $amount) * 100) : (int) $session->amount_cents;
+
+        $completePayload = [
+            'gateway_payment_id' => $paymentId,
+            'amount_paid_cents' => $amountCents,
+            'paid_amount_cents' => $amountCents,
+            'currency' => $currency,
+            'invoice_number' => 'INV-'.$session->public_id,
+        ];
+
+        $registrationId = (string) ($body['registrationId'] ?? '');
+        if ($registrationId !== '' && $session->intent === CheckoutSession::INTENT_SUBSCRIPTION) {
+            $completePayload['gateway_subscription_id'] = $registrationId;
+        }
+
+        app(CheckoutService::class)->complete($session, $completePayload);
     }
 
     /**

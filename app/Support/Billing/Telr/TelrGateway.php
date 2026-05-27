@@ -2,17 +2,23 @@
 
 namespace App\Support\Billing\Telr;
 
+use App\Models\CheckoutSession;
 use App\Models\Payment;
 use App\Models\Plan;
 use App\Models\Subscription;
 use App\Models\Tenant;
 use App\Models\WebhookEvent;
+use App\Support\Billing\Checkout\CheckoutResult;
+use App\Support\Billing\Checkout\CheckoutService;
+use App\Support\Billing\Checkout\RedirectCheckout;
+use App\Support\Billing\CheckoutGateway;
 use App\Support\Billing\PaymentGateway;
 use App\Support\Billing\SubscriptionGateway;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use RuntimeException;
 
@@ -42,7 +48,7 @@ use RuntimeException;
  * Auth: REST endpoints use HTTP Basic auth — username = store_id,
  * password = auth_key. See authPair() / http().
  */
-class TelrGateway implements PaymentGateway, SubscriptionGateway
+class TelrGateway implements CheckoutGateway, PaymentGateway, SubscriptionGateway
 {
     /**
      * Single REST host. Test mode is selected per-request via `ivp_test`
@@ -58,6 +64,93 @@ class TelrGateway implements PaymentGateway, SubscriptionGateway
     public function displayName(): string
     {
         return 'Telr';
+    }
+
+    // ------------------------------------------------------------------
+    // CheckoutGateway
+    // ------------------------------------------------------------------
+
+    /** @return array<int, string> */
+    public function supportedCurrencies(): array
+    {
+        return ['AED', 'SAR', 'USD', 'EUR', 'GBP', 'INR', 'KWD', 'QAR', 'OMR', 'BHD', 'JOD', 'EGP'];
+    }
+
+    public function supportsSubscriptions(): bool
+    {
+        return true;
+    }
+
+    /**
+     * Create a Telr hosted order for the given CheckoutSession. Idempotent:
+     * re-call on a session that already has a gateway_session_id reuses the
+     * stored result_payload rather than POSTing a duplicate to Telr.
+     */
+    public function initiateCheckout(CheckoutSession $session): CheckoutResult
+    {
+        if ($session->gateway_session_id !== null && $session->result_kind === CheckoutSession::KIND_REDIRECT) {
+            $url = (string) ($session->result_payload['url'] ?? '');
+            if ($url !== '') {
+                return new RedirectCheckout(
+                    gatewaySessionId: (string) $session->gateway_session_id,
+                    url: $url,
+                );
+            }
+        }
+
+        $plan = $session->plan;
+        if ($plan === null) {
+            throw new RuntimeException("Checkout session {$session->public_id} has no plan.");
+        }
+
+        $storeId = (int) config('billing.gateways.telr.store_id');
+        $authKey = (string) config('billing.gateways.telr.auth_key');
+        $testMode = (int) config('billing.gateways.telr.test_mode');
+
+        $returnUrl = route('checkout.return', ['session' => $session->public_id]);
+
+        $body = [
+            'method' => 'create',
+            'store' => $storeId,
+            'authkey' => $authKey,
+            'framed' => 0,
+            'order' => [
+                'cartid' => $session->public_id,
+                'test' => $testMode,
+                'amount' => number_format((int) $session->amount_cents / 100, 2, '.', ''),
+                'currency' => strtoupper((string) $session->currency),
+                'description' => $plan->name,
+            ],
+            'return' => [
+                'authorised' => $returnUrl,
+                'declined' => $returnUrl,
+                'cancelled' => $returnUrl,
+            ],
+        ];
+
+        $response = $this->http()
+            ->post(self::BASE_URL, $body)
+            ->throw()
+            ->json();
+
+        $orderRef = (string) ($response['order']['ref'] ?? '');
+        $orderUrl = (string) ($response['order']['url'] ?? '');
+
+        if ($orderRef === '' || $orderUrl === '') {
+            throw new RuntimeException('Telr initiateCheckout: missing order.ref or order.url — '.json_encode($response));
+        }
+
+        $result = new RedirectCheckout(gatewaySessionId: $orderRef, url: $orderUrl);
+
+        $session->forceFill([
+            'gateway' => 'telr',
+            'gateway_session_id' => $result->gatewaySessionId,
+            'status' => CheckoutSession::STATUS_AWAITING_PAYMENT,
+            'result_kind' => $result->kind,
+            'result_payload' => $result->toPayload(),
+        ])->save();
+
+        return $result;
     }
 
     // ------------------------------------------------------------------
@@ -358,12 +451,57 @@ class TelrGateway implements PaymentGateway, SubscriptionGateway
             throw new RuntimeException('Telr IPN signature verification failed (tran_check mismatch).');
         }
 
+        $status = rawurldecode((string) ($payload['tran_status'] ?? ''));
+        if ($status === 'A') {
+            $this->onCheckoutAuthorised($payload);
+        }
+
         $event->forceFill([
             'status' => 'processed',
             'processed_at' => now(),
         ])->save();
 
         return $event->fresh();
+    }
+
+    /**
+     * Reconcile a Telr "Authorised" IPN with its CheckoutSession via the
+     * order ref stored in gateway_session_id, then hand off to
+     * CheckoutService to materialise Subscription + Invoice + Payment.
+     *
+     * @param  array<string, mixed>  $payload
+     */
+    private function onCheckoutAuthorised(array $payload): void
+    {
+        $orderRef = rawurldecode((string) ($payload['tran_ref'] ?? ''));
+        if ($orderRef === '') {
+            return;
+        }
+
+        $session = CheckoutSession::query()
+            ->where('gateway', 'telr')
+            ->where('gateway_session_id', $orderRef)
+            ->first();
+
+        if ($session === null) {
+            Log::warning('Telr IPN Authorised: no matching CheckoutSession', ['tran_ref' => $orderRef]);
+
+            return;
+        }
+
+        if ($session->status === CheckoutSession::STATUS_COMPLETED) {
+            return;
+        }
+
+        $amount = (float) rawurldecode((string) ($payload['tran_amount'] ?? '0'));
+        $currency = strtoupper(rawurldecode((string) ($payload['tran_currency'] ?? $session->currency)));
+
+        app(CheckoutService::class)->complete($session, [
+            'gateway_payment_id' => $orderRef,
+            'amount_paid_cents' => (int) round($amount * 100),
+            'paid_amount_cents' => (int) round($amount * 100),
+            'currency' => $currency,
+        ]);
     }
 
     // ------------------------------------------------------------------

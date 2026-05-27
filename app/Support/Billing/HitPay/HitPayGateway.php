@@ -2,16 +2,22 @@
 
 namespace App\Support\Billing\HitPay;
 
+use App\Models\CheckoutSession;
 use App\Models\Payment;
 use App\Models\Plan;
 use App\Models\Subscription;
 use App\Models\Tenant;
 use App\Models\WebhookEvent;
+use App\Support\Billing\Checkout\CheckoutResult;
+use App\Support\Billing\Checkout\CheckoutService;
+use App\Support\Billing\Checkout\RedirectCheckout;
+use App\Support\Billing\CheckoutGateway;
 use App\Support\Billing\PaymentGateway;
 use App\Support\Billing\SubscriptionGateway;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use RuntimeException;
 
@@ -46,7 +52,7 @@ use RuntimeException;
  *     This driver implements both and dispatches based on which signal is
  *     present on the inbound Request.
  */
-class HitPayGateway implements PaymentGateway, SubscriptionGateway
+class HitPayGateway implements CheckoutGateway, PaymentGateway, SubscriptionGateway
 {
     public function id(): string
     {
@@ -56,6 +62,105 @@ class HitPayGateway implements PaymentGateway, SubscriptionGateway
     public function displayName(): string
     {
         return 'HitPay';
+    }
+
+    // ------------------------------------------------------------------
+    // CheckoutGateway
+    // ------------------------------------------------------------------
+
+    /**
+     * @return array<int, string>
+     */
+    public function supportedCurrencies(): array
+    {
+        return ['SGD', 'MYR', 'USD'];
+    }
+
+    public function supportsSubscriptions(): bool
+    {
+        return true;
+    }
+
+    public function initiateCheckout(CheckoutSession $session): CheckoutResult
+    {
+        if ($session->gateway_session_id !== null && is_array($session->result_payload)) {
+            $existingUrl = (string) ($session->result_payload['url'] ?? '');
+            if ($existingUrl !== '') {
+                return new RedirectCheckout(
+                    gatewaySessionId: (string) $session->gateway_session_id,
+                    url: $existingUrl,
+                );
+            }
+        }
+
+        $plan = $session->plan;
+        if ($plan === null) {
+            throw new RuntimeException("Checkout session {$session->public_id} has no plan.");
+        }
+
+        $returnUrl = route('checkout.return', ['session' => $session->public_id]);
+        $webhookUrl = route('webhooks.gateway', ['gateway' => $this->id()]);
+        $isSubscription = $session->intent === CheckoutSession::INTENT_SUBSCRIPTION;
+
+        if ($isSubscription) {
+            $planId = (string) ($plan->gateway_ids['hitpay'] ?? '');
+            if ($planId === '') {
+                throw new RuntimeException('HitPay: Plan#'.$plan->id.' is missing gateway_ids.hitpay — sync the plan to HitPay first.');
+            }
+
+            $email = (string) ($session->tenant?->owner?->email ?? '');
+            if ($email === '') {
+                throw new RuntimeException('HitPay: tenant has no billing email — cannot start subscription checkout.');
+            }
+
+            $response = $this->http()
+                ->post('recurring-billing', [
+                    'plan_id' => $planId,
+                    'customer_email' => $email,
+                    'start_date' => now()->toDateString(),
+                    'reference' => $session->public_id,
+                    'redirect_url' => $returnUrl,
+                    'webhook' => $webhookUrl,
+                ])
+                ->throw()
+                ->json();
+        } else {
+            $response = $this->http()
+                ->post('payment-requests', [
+                    'amount' => $this->toDecimalString((int) $session->amount_cents),
+                    'currency' => strtoupper((string) $session->currency),
+                    'reference_number' => $session->public_id,
+                    'purpose' => $plan->name,
+                    'redirect_url' => $returnUrl,
+                    'webhook' => $webhookUrl,
+                    'send_email' => false,
+                    'send_sms' => false,
+                    'allow_repeated_payments' => false,
+                ])
+                ->throw()
+                ->json();
+        }
+
+        $gatewaySessionId = (string) ($response['id'] ?? '');
+        $url = (string) ($response['url'] ?? '');
+        if ($gatewaySessionId === '' || $url === '') {
+            throw new RuntimeException('HitPay: initiateCheckout response missing id/url.');
+        }
+
+        $result = new RedirectCheckout(
+            gatewaySessionId: $gatewaySessionId,
+            url: $url,
+        );
+
+        $session->forceFill([
+            'gateway' => $this->id(),
+            'gateway_session_id' => $result->gatewaySessionId,
+            'status' => CheckoutSession::STATUS_AWAITING_PAYMENT,
+            'result_kind' => $result->kind,
+            'result_payload' => $result->toPayload(),
+        ])->save();
+
+        return $result;
     }
 
     // ------------------------------------------------------------------
@@ -378,12 +483,103 @@ class HitPayGateway implements PaymentGateway, SubscriptionGateway
             throw new RuntimeException('HitPay webhook signature verification failed.');
         }
 
-        $event->forceFill([
-            'status' => 'processed',
-            'processed_at' => now(),
-        ])->save();
+        try {
+            $payload = $request->all();
+            if (! is_array($payload) || $payload === []) {
+                $jsonBody = $request->json()->all();
+                if (is_array($jsonBody) && $jsonBody !== []) {
+                    $payload = $jsonBody;
+                }
+            }
+
+            $this->maybeCompleteCheckoutSession($payload);
+
+            $event->forceFill([
+                'status' => 'processed',
+                'processed_at' => now(),
+            ])->save();
+        } catch (\Throwable $e) {
+            $event->forceFill([
+                'status' => 'failed',
+                'error_message' => $e->getMessage(),
+                'processing_attempts' => (int) $event->processing_attempts + 1,
+            ])->save();
+
+            Log::warning('HitPay webhook processing failed', [
+                'event_id' => $event->id,
+                'gateway_event_id' => $event->gateway_event_id,
+                'error' => $e->getMessage(),
+            ]);
+        }
 
         return $event->fresh();
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function maybeCompleteCheckoutSession(array $payload): void
+    {
+        $status = strtolower((string) ($payload['status'] ?? ''));
+        $isPaymentComplete = $status === 'completed';
+        $isRecurringActive = $status === 'active';
+
+        if (! $isPaymentComplete && ! $isRecurringActive) {
+            return;
+        }
+
+        $gatewaySessionId = (string) ($payload['id'] ?? '');
+        if ($gatewaySessionId === '') {
+            return;
+        }
+
+        $session = CheckoutSession::query()
+            ->where('gateway', $this->id())
+            ->where('gateway_session_id', $gatewaySessionId)
+            ->first();
+
+        if ($session === null) {
+            // Legacy callbacks echo reference_number = session.public_id.
+            $publicId = (string) ($payload['reference_number'] ?? $payload['reference'] ?? '');
+            if ($publicId !== '') {
+                $session = CheckoutSession::query()->where('public_id', $publicId)->first();
+            }
+        }
+
+        if ($session === null) {
+            Log::warning('HitPay webhook: no matching CheckoutSession', [
+                'gateway_session_id' => $gatewaySessionId,
+            ]);
+
+            return;
+        }
+
+        if ($session->status === CheckoutSession::STATUS_COMPLETED) {
+            return;
+        }
+
+        $paidCents = isset($payload['amount'])
+            ? (int) round(((float) $payload['amount']) * 100)
+            : (int) $session->amount_cents;
+
+        $currency = strtoupper((string) ($payload['currency'] ?? $session->currency));
+
+        $checkout = app(CheckoutService::class);
+        $checkout->complete($session, [
+            'gateway_subscription_id' => $isRecurringActive ? $gatewaySessionId : null,
+            'status' => $isRecurringActive ? 'active' : 'active',
+            'unit_amount_cents' => $session->amount_cents,
+            'quantity' => 1,
+            'current_period_start' => now(),
+            'current_period_end' => now()->addMonth(),
+            'gateway_payment_id' => (string) ($payload['payment_id'] ?? $gatewaySessionId),
+            'paid_amount_cents' => $paidCents,
+            'invoice_number' => 'INV-'.$session->public_id,
+            'payment_metadata' => [
+                'currency' => $currency,
+                'hitpay_status' => $status,
+            ],
+        ]);
     }
 
     // ------------------------------------------------------------------

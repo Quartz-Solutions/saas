@@ -2,19 +2,26 @@
 
 namespace App\Support\Billing\Aps;
 
+use App\Models\CheckoutSession;
 use App\Models\Payment;
 use App\Models\Plan;
 use App\Models\Subscription;
 use App\Models\Tenant;
 use App\Models\WebhookEvent;
+use App\Support\Billing\Checkout\CheckoutResult;
+use App\Support\Billing\Checkout\CheckoutService;
+use App\Support\Billing\Checkout\FormPostCheckout;
+use App\Support\Billing\CheckoutGateway;
 use App\Support\Billing\PaymentGateway;
 use App\Support\Billing\SubscriptionGateway;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use RuntimeException;
+use Throwable;
 
 /**
  * Amazon Payment Services (Payfort) driver — Phase 3.3 scaffold.
@@ -53,7 +60,7 @@ use RuntimeException;
  * amazonpaymentservices/aps-php-sdk are both unmaintained), so we sign
  * and verify by hand.
  */
-class ApsGateway implements PaymentGateway, SubscriptionGateway
+class ApsGateway implements CheckoutGateway, PaymentGateway, SubscriptionGateway
 {
     public function id(): string
     {
@@ -63,6 +70,79 @@ class ApsGateway implements PaymentGateway, SubscriptionGateway
     public function displayName(): string
     {
         return 'Amazon Payment Services';
+    }
+
+    // ------------------------------------------------------------------
+    // CheckoutGateway
+    // ------------------------------------------------------------------
+
+    /**
+     * APS settlement currencies. KWD/BHD/JOD/OMR are 3-decimal (×1000);
+     * the rest are 2-decimal (×100). See toMinorUnits().
+     *
+     * @return array<int, string>
+     */
+    public function supportedCurrencies(): array
+    {
+        return ['AED', 'SAR', 'KWD', 'USD', 'EUR', 'GBP', 'EGP', 'JOD', 'QAR', 'BHD', 'OMR'];
+    }
+
+    /**
+     * APS has no native subscription object — recurring is merchant-side via
+     * TOKENIZATION + RECURRING commands against a stored token_name.
+     */
+    public function supportsSubscriptions(): bool
+    {
+        return true;
+    }
+
+    /**
+     * Build a signed APS Hosted Checkout (Redirection) form for the session.
+     *
+     * No server-to-server API call is made — the customer's browser POSTs
+     * the signed params directly to APS. We use session.public_id as the
+     * merchant_reference so that the response notification reconciles via
+     * gateway_session_id lookup. Re-calling is idempotent: the same inputs
+     * yield the same signature, and we persist over the existing row.
+     */
+    public function initiateCheckout(CheckoutSession $session): CheckoutResult
+    {
+        $merchantReference = $session->public_id;
+        $currency = strtoupper((string) $session->currency);
+        $email = $session->user?->email ?? 'na@example.com';
+
+        $params = [
+            'service_command' => 'PURCHASE',
+            'access_code' => (string) config('billing.gateways.aps.access_code'),
+            'merchant_identifier' => (string) config('billing.gateways.aps.merchant_identifier'),
+            'merchant_reference' => $merchantReference,
+            'amount' => (string) $this->toMinorUnits((int) $session->amount_cents, $currency),
+            'currency' => $currency,
+            'language' => 'en',
+            'customer_email' => $email,
+            'return_url' => route('checkout.return', ['session' => $session->public_id]),
+        ];
+
+        $params = $this->withSignature($params);
+
+        $action = $this->baseUrl().'/FortAPI/paymentPage';
+
+        $result = new FormPostCheckout(
+            gatewaySessionId: $merchantReference,
+            action: $action,
+            params: $params,
+            method: 'POST',
+        );
+
+        $session->forceFill([
+            'gateway' => 'aps',
+            'gateway_session_id' => $merchantReference,
+            'status' => CheckoutSession::STATUS_AWAITING_PAYMENT,
+            'result_kind' => $result->kind,
+            'result_payload' => $result->toPayload(),
+        ])->save();
+
+        return $result;
     }
 
     // ------------------------------------------------------------------
@@ -274,12 +354,93 @@ class ApsGateway implements PaymentGateway, SubscriptionGateway
             throw new RuntimeException('APS signature verification failed');
         }
 
-        $event->forceFill([
-            'status' => 'processed',
-            'processed_at' => now(),
-        ])->save();
+        try {
+            $this->dispatchEvent($payload);
+
+            $event->forceFill([
+                'status' => 'processed',
+                'processed_at' => now(),
+            ])->save();
+        } catch (Throwable $e) {
+            $event->forceFill([
+                'status' => 'failed',
+                'error_message' => $e->getMessage(),
+                'processing_attempts' => (int) $event->processing_attempts + 1,
+            ])->save();
+
+            Log::warning('APS webhook processing failed', [
+                'event_id' => $event->id,
+                'gateway_event_id' => $event->gateway_event_id,
+                'error' => $e->getMessage(),
+            ]);
+        }
 
         return $event->fresh();
+    }
+
+    /**
+     * Route a verified APS notification payload to the right local handler.
+     * SUCCESS response_codes start with '14' (e.g. 14000 = success). The
+     * command field tells us which transaction kind we just settled.
+     *
+     * @param  array<string, mixed>  $payload
+     */
+    private function dispatchEvent(array $payload): void
+    {
+        $responseCode = (string) ($payload['response_code'] ?? '');
+        $command = strtoupper((string) ($payload['command'] ?? ''));
+
+        $isSuccess = str_starts_with($responseCode, '14');
+        $isCheckoutCommand = in_array($command, ['PURCHASE', 'AUTHORIZATION', 'CAPTURE'], true);
+
+        if ($isSuccess && $isCheckoutCommand) {
+            $this->onCheckoutCompleted($payload);
+        }
+    }
+
+    /**
+     * Reconcile a successful APS PURCHASE/AUTH/CAPTURE notification with the
+     * local CheckoutSession (merchant_reference == session.public_id) and
+     * delegate to CheckoutService::complete to spawn Subscription + Invoice
+     * + Payment rows.
+     *
+     * @param  array<string, mixed>  $payload
+     */
+    private function onCheckoutCompleted(array $payload): void
+    {
+        $merchantReference = (string) ($payload['merchant_reference'] ?? '');
+        if ($merchantReference === '') {
+            Log::warning('APS notification missing merchant_reference', ['payload' => $payload]);
+
+            return;
+        }
+
+        $session = CheckoutSession::query()
+            ->where('gateway', 'aps')
+            ->where('gateway_session_id', $merchantReference)
+            ->first();
+
+        if ($session === null) {
+            Log::warning('APS notification: no matching CheckoutSession', [
+                'merchant_reference' => $merchantReference,
+            ]);
+
+            return;
+        }
+
+        if ($session->status === CheckoutSession::STATUS_COMPLETED) {
+            return; // idempotent re-delivery
+        }
+
+        $fortId = (string) ($payload['fort_id'] ?? '');
+        $currency = strtoupper((string) ($payload['currency'] ?? $session->currency));
+        $amountMinor = (int) ($payload['amount'] ?? 0);
+
+        app(CheckoutService::class)->complete($session, [
+            'gateway_payment_id' => $fortId !== '' ? $fortId : null,
+            'amount_paid_cents' => $this->fromMinorUnits($amountMinor, $currency),
+            'currency' => $currency,
+        ]);
     }
 
     // ------------------------------------------------------------------
@@ -480,6 +641,21 @@ class ApsGateway implements PaymentGateway, SubscriptionGateway
         }
 
         return $cents;
+    }
+
+    /**
+     * Inverse of toMinorUnits — translate an APS minor-unit amount back into
+     * our integer-cents (×100) convention. 3-decimal currencies divide by 10.
+     */
+    protected function fromMinorUnits(int $minor, string $currency): int
+    {
+        $threeDecimal = ['KWD', 'OMR', 'BHD'];
+
+        if (in_array(strtoupper($currency), $threeDecimal, true)) {
+            return (int) ($minor / 10);
+        }
+
+        return $minor;
     }
 
     // ------------------------------------------------------------------

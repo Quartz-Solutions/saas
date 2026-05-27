@@ -2,17 +2,23 @@
 
 namespace App\Support\Billing\MyFatoorah;
 
+use App\Models\CheckoutSession;
 use App\Models\Payment;
 use App\Models\Plan;
 use App\Models\Subscription;
 use App\Models\Tenant;
 use App\Models\WebhookEvent;
+use App\Support\Billing\Checkout\CheckoutResult;
+use App\Support\Billing\Checkout\CheckoutService;
+use App\Support\Billing\Checkout\RedirectCheckout;
+use App\Support\Billing\CheckoutGateway;
 use App\Support\Billing\PaymentGateway;
 use App\Support\Billing\SubscriptionGateway;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use RuntimeException;
 use Throwable;
@@ -46,8 +52,11 @@ use Throwable;
  * Auth header: `Bearer <api_token>` — the token is a long JWT-like
  * string copied verbatim from Integration Settings → API Key.
  */
-class MyFatoorahGateway implements PaymentGateway, SubscriptionGateway
+class MyFatoorahGateway implements CheckoutGateway, PaymentGateway, SubscriptionGateway
 {
+    /** ISO 4217 codes MyFatoorah uses 3-decimal minor units for. */
+    private const THREE_DECIMAL_CURRENCIES = ['KWD', 'BHD', 'OMR', 'JOD'];
+
     public function id(): string
     {
         return 'myfatoorah';
@@ -56,6 +65,113 @@ class MyFatoorahGateway implements PaymentGateway, SubscriptionGateway
     public function displayName(): string
     {
         return 'MyFatoorah';
+    }
+
+    // ------------------------------------------------------------------
+    // CheckoutGateway
+    // ------------------------------------------------------------------
+
+    /**
+     * @return array<int, string>
+     */
+    public function supportedCurrencies(): array
+    {
+        return ['KWD', 'SAR', 'AED', 'BHD', 'QAR', 'OMR', 'JOD', 'USD', 'EUR', 'GBP', 'EGP'];
+    }
+
+    public function supportsSubscriptions(): bool
+    {
+        return true;
+    }
+
+    /**
+     * Create a MyFatoorah invoice and return a RedirectCheckout pointing at
+     * the hosted InvoiceURL. Idempotent on $session->gateway_session_id.
+     */
+    public function initiateCheckout(CheckoutSession $session): CheckoutResult
+    {
+        if ($session->gateway_session_id !== null && is_array($session->result_payload)) {
+            $existingUrl = (string) ($session->result_payload['url'] ?? '');
+            if ($existingUrl !== '') {
+                return new RedirectCheckout(
+                    gatewaySessionId: (string) $session->gateway_session_id,
+                    url: $existingUrl,
+                );
+            }
+        }
+
+        $plan = $session->plan;
+        if ($plan === null) {
+            throw new RuntimeException("Checkout session {$session->public_id} has no plan.");
+        }
+
+        $currency = strtoupper((string) $session->currency);
+
+        $body = [
+            'CustomerName' => $session->user?->name ?? 'NA',
+            'NotificationOption' => 'LNK',
+            'InvoiceValue' => $this->minorToMajor((int) $session->amount_cents, $currency),
+            'DisplayCurrencyIso' => $currency,
+            'CustomerEmail' => $session->user?->email,
+            'CallBackUrl' => route('checkout.return', ['session' => $session->public_id]),
+            'ErrorUrl' => route('checkout.return', ['session' => $session->public_id]).'?canceled=1',
+            'Language' => 'EN',
+            'CustomerReference' => $session->public_id,
+            'UserDefinedField' => $session->public_id,
+        ];
+
+        $response = $this->http()->post('/v2/SendPayment', $body);
+
+        if (! $response->successful()) {
+            throw new RuntimeException('MyFatoorah SendPayment failed: '.$response->body());
+        }
+
+        $payload = (array) $response->json();
+        $data = (array) ($payload['Data'] ?? []);
+        $invoiceId = (string) ($data['InvoiceId'] ?? '');
+        $invoiceUrl = (string) ($data['InvoiceURL'] ?? '');
+
+        if ($invoiceId === '' || $invoiceUrl === '') {
+            throw new RuntimeException('MyFatoorah SendPayment returned no InvoiceId/InvoiceURL: '.$response->body());
+        }
+
+        $result = new RedirectCheckout(
+            gatewaySessionId: $invoiceId,
+            url: $invoiceUrl,
+        );
+
+        $session->forceFill([
+            'gateway' => 'myfatoorah',
+            'gateway_session_id' => $result->gatewaySessionId,
+            'status' => CheckoutSession::STATUS_AWAITING_PAYMENT,
+            'result_kind' => $result->kind,
+            'result_payload' => $result->toPayload(),
+        ])->save();
+
+        return $result;
+    }
+
+    /**
+     * Convert integer minor-unit cents to the major-unit decimal MyFatoorah
+     * expects in /v2/SendPayment payloads. KWD/BHD/OMR/JOD are 3-decimal
+     * currencies (fils), everything else divides by 100.
+     */
+    private function minorToMajor(int $amountCents, string $currency): float
+    {
+        $divisor = in_array(strtoupper($currency), self::THREE_DECIMAL_CURRENCIES, true) ? 1000 : 100;
+
+        return round($amountCents / $divisor, 3);
+    }
+
+    /**
+     * Inverse of minorToMajor — turns a MyFatoorah TransactionAmount back
+     * into integer minor units for our amount_paid_cents columns.
+     */
+    private function majorToMinor(float|int|string $major, string $currency): int
+    {
+        $multiplier = in_array(strtoupper($currency), self::THREE_DECIMAL_CURRENCIES, true) ? 1000 : 100;
+
+        return (int) round(((float) $major) * $multiplier);
     }
 
     // ------------------------------------------------------------------
@@ -377,12 +493,80 @@ class MyFatoorahGateway implements PaymentGateway, SubscriptionGateway
             throw new RuntimeException('MyFatoorah webhook signature verification failed.');
         }
 
-        $event->forceFill([
-            'status' => 'processed',
-            'processed_at' => now(),
-        ])->save();
+        try {
+            $payload = (array) $request->json()->all();
+            $eventType = (string) ($payload['EventType'] ?? '');
+            $data = (array) ($payload['Data'] ?? []);
+
+            if ($eventType === 'TransactionsStatusChanged' && (string) ($data['InvoiceStatus'] ?? '') === 'Paid') {
+                $this->onCheckoutPaid($data);
+            }
+
+            $event->forceFill([
+                'status' => 'processed',
+                'processed_at' => now(),
+            ])->save();
+        } catch (Throwable $e) {
+            $event->forceFill([
+                'status' => 'failed',
+                'error_message' => $e->getMessage(),
+                'processing_attempts' => (int) $event->processing_attempts + 1,
+            ])->save();
+
+            Log::warning('MyFatoorah webhook processing failed', [
+                'event_id' => $event->id,
+                'gateway_event_id' => $event->gateway_event_id,
+                'error' => $e->getMessage(),
+            ]);
+        }
 
         return $event->fresh();
+    }
+
+    /**
+     * Reconcile a TransactionsStatusChanged → Paid webhook with the local
+     * CheckoutSession, delegating Subscription/Invoice/Payment creation to
+     * CheckoutService::complete.
+     *
+     * @param  array<string, mixed>  $data  The webhook event's Data block.
+     */
+    private function onCheckoutPaid(array $data): void
+    {
+        $invoiceId = (string) ($data['InvoiceId'] ?? '');
+        $publicId = (string) ($data['CustomerReference'] ?? $data['UserDefinedField'] ?? '');
+
+        $session = null;
+        if ($invoiceId !== '') {
+            $session = CheckoutSession::query()
+                ->where('gateway', 'myfatoorah')
+                ->where('gateway_session_id', $invoiceId)
+                ->first();
+        }
+        if ($session === null && $publicId !== '') {
+            $session = CheckoutSession::query()->where('public_id', $publicId)->first();
+        }
+
+        if ($session === null) {
+            Log::warning('MyFatoorah TransactionsStatusChanged: no matching CheckoutSession', [
+                'invoice_id' => $invoiceId,
+                'customer_reference' => $publicId,
+            ]);
+
+            return;
+        }
+
+        $currency = strtoupper((string) ($data['TransactionCurrencyIso'] ?? $session->currency));
+        $txAmount = $data['TransactionAmount'] ?? $data['InvoiceTransactionValue'] ?? null;
+        $amountPaidCents = $txAmount !== null
+            ? $this->majorToMinor($txAmount, $currency)
+            : (int) $session->amount_cents;
+
+        app(CheckoutService::class)->complete($session, [
+            'gateway_payment_id' => (string) ($data['TransactionId'] ?? $invoiceId),
+            'amount_paid_cents' => $amountPaidCents,
+            'paid_amount_cents' => $amountPaidCents,
+            'currency' => $currency,
+        ]);
     }
 
     // ------------------------------------------------------------------

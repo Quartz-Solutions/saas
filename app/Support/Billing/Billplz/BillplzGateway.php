@@ -2,14 +2,21 @@
 
 namespace App\Support\Billing\Billplz;
 
+use App\Models\CheckoutSession;
 use App\Models\Payment;
 use App\Models\WebhookEvent;
+use App\Support\Billing\Checkout\CheckoutResult;
+use App\Support\Billing\Checkout\CheckoutService;
+use App\Support\Billing\Checkout\RedirectCheckout;
+use App\Support\Billing\CheckoutGateway;
 use App\Support\Billing\PaymentGateway;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use InvalidArgumentException;
 use RuntimeException;
+use Throwable;
 
 /**
  * Billplz driver — Phase 3.4 scaffold.
@@ -54,7 +61,7 @@ use RuntimeException;
  * GET) is SHA-256. See {@see self::verifyCallback()} and
  * {@see self::verifyRedirect()}.
  */
-class BillplzGateway implements PaymentGateway
+class BillplzGateway implements CheckoutGateway, PaymentGateway
 {
     public function id(): string
     {
@@ -64,6 +71,111 @@ class BillplzGateway implements PaymentGateway
     public function displayName(): string
     {
         return 'Billplz';
+    }
+
+    // ------------------------------------------------------------------
+    // CheckoutGateway
+    // ------------------------------------------------------------------
+
+    /** @return array<int, string> */
+    public function supportedCurrencies(): array
+    {
+        return ['MYR'];
+    }
+
+    public function supportsSubscriptions(): bool
+    {
+        return false;
+    }
+
+    public function initiateCheckout(CheckoutSession $session): CheckoutResult
+    {
+        if ($session->intent === CheckoutSession::INTENT_SUBSCRIPTION) {
+            throw new RuntimeException('Billplz does not support subscriptions; merchant-side recurring is Phase 3+.');
+        }
+
+        // Idempotent re-resolve: refetch the existing bill if we already created one.
+        if ($session->gateway_session_id !== null && $session->gateway_session_id !== '') {
+            $existing = $this->fetchExistingBill($session->gateway_session_id);
+            if ($existing !== null && filled($existing['url'] ?? null)) {
+                $result = new RedirectCheckout(
+                    gatewaySessionId: (string) ($existing['id'] ?? $session->gateway_session_id),
+                    url: (string) $existing['url'],
+                );
+                $this->persistResult($session, $result);
+
+                return $result;
+            }
+        }
+
+        $plan = $session->plan;
+        if ($plan === null) {
+            throw new RuntimeException("Checkout session {$session->public_id} has no plan.");
+        }
+
+        $user = $session->user;
+        $tenant = $session->tenant;
+
+        $payload = [
+            'collection_id' => (string) config('billing.gateways.billplz.collection_id'),
+            'email' => (string) ($user?->email ?? 'na@example.com'),
+            'name' => (string) ($user?->name ?? $tenant?->name ?? 'Customer'),
+            'amount' => (int) $session->amount_cents,
+            'callback_url' => route('webhooks.gateway', ['gateway' => 'billplz']),
+            'redirect_url' => route('checkout.return', ['session' => $session->public_id]),
+            'description' => $plan->name.' — '.$session->public_id,
+            'reference_1_label' => 'CheckoutSession',
+            'reference_1' => $session->public_id,
+        ];
+
+        $response = $this->http()->post('v3/bills', $payload);
+
+        if (! $response->successful()) {
+            throw new RuntimeException('Billplz v3/bills failed: '.$response->status().' '.$response->body());
+        }
+
+        $body = (array) $response->json();
+        $billId = (string) ($body['id'] ?? '');
+        $redirectUrl = (string) ($body['url'] ?? '');
+
+        if ($billId === '' || $redirectUrl === '') {
+            throw new RuntimeException('Billplz v3/bills returned no id/url: '.$response->body());
+        }
+
+        $result = new RedirectCheckout(
+            gatewaySessionId: $billId,
+            url: $redirectUrl,
+        );
+
+        $this->persistResult($session, $result);
+
+        return $result;
+    }
+
+    private function persistResult(CheckoutSession $session, RedirectCheckout $result): void
+    {
+        $session->forceFill([
+            'gateway' => 'billplz',
+            'gateway_session_id' => $result->gatewaySessionId,
+            'status' => CheckoutSession::STATUS_AWAITING_PAYMENT,
+            'result_kind' => $result->kind,
+            'result_payload' => $result->toPayload(),
+        ])->save();
+    }
+
+    /** @return array<string, mixed>|null */
+    protected function fetchExistingBill(string $billId): ?array
+    {
+        try {
+            $response = $this->http()->get('v3/bills/'.$billId);
+            if (! $response->successful()) {
+                return null;
+            }
+
+            return (array) $response->json();
+        } catch (Throwable) {
+            return null;
+        }
     }
 
     // ------------------------------------------------------------------
@@ -192,12 +304,73 @@ class BillplzGateway implements PaymentGateway
             throw new RuntimeException('Billplz callback signature verification failed');
         }
 
-        $event->forceFill([
-            'status' => 'processed',
-            'processed_at' => now(),
-        ])->save();
+        try {
+            $this->onBillCallback($params);
+
+            $event->forceFill([
+                'status' => 'processed',
+                'processed_at' => now(),
+            ])->save();
+        } catch (Throwable $e) {
+            $event->forceFill([
+                'status' => 'failed',
+                'error_message' => $e->getMessage(),
+                'processing_attempts' => (int) $event->processing_attempts + 1,
+            ])->save();
+
+            Log::warning('Billplz webhook processing failed', [
+                'event_id' => $event->id,
+                'gateway_event_id' => $event->gateway_event_id,
+                'error' => $e->getMessage(),
+            ]);
+        }
 
         return $event->fresh();
+    }
+
+    /**
+     * Route a paid bill callback through CheckoutService::complete. Billplz
+     * posts `paid` as the literal string "true"/"false" (form-encoded), so we
+     * normalise both shapes.
+     *
+     * @param  array<string, mixed>  $params
+     */
+    private function onBillCallback(array $params): void
+    {
+        $paid = $params['paid'] ?? null;
+        $isPaid = $paid === true || $paid === 'true' || $paid === '1' || $paid === 1;
+        if (! $isPaid) {
+            return;
+        }
+
+        $billId = (string) ($params['id'] ?? '');
+        if ($billId === '') {
+            return;
+        }
+
+        $session = CheckoutSession::query()
+            ->where('gateway', 'billplz')
+            ->where('gateway_session_id', $billId)
+            ->first();
+
+        if ($session === null) {
+            Log::info('Billplz callback: no matching CheckoutSession', ['bill_id' => $billId]);
+
+            return;
+        }
+
+        if ($session->status === CheckoutSession::STATUS_COMPLETED) {
+            return;
+        }
+
+        $paidAmount = (int) ($params['paid_amount'] ?? $session->amount_cents);
+
+        app(CheckoutService::class)->complete($session, [
+            'gateway_payment_id' => (string) ($params['transaction_id'] ?? $billId),
+            'paid_amount_cents' => $paidAmount,
+            'amount_paid_cents' => $paidAmount,
+            'currency' => 'MYR',
+        ]);
     }
 
     // ------------------------------------------------------------------

@@ -2,19 +2,26 @@
 
 namespace App\Support\Billing\PayTabs;
 
+use App\Models\CheckoutSession;
 use App\Models\Payment;
 use App\Models\Plan;
 use App\Models\Subscription;
 use App\Models\Tenant;
 use App\Models\WebhookEvent;
+use App\Support\Billing\Checkout\CheckoutResult;
+use App\Support\Billing\Checkout\CheckoutService;
+use App\Support\Billing\Checkout\RedirectCheckout;
+use App\Support\Billing\CheckoutGateway;
 use App\Support\Billing\PaymentGateway;
 use App\Support\Billing\SubscriptionGateway;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use RuntimeException;
+use Throwable;
 
 /**
  * PayTabs driver — Phase 3.2 scaffold.
@@ -39,7 +46,7 @@ use RuntimeException;
  * Auth: the `authorization` header is the RAW server_key — there is
  * NO `Bearer ` prefix. Confirmed against PayTabs API reference.
  */
-class PayTabsGateway implements PaymentGateway, SubscriptionGateway
+class PayTabsGateway implements CheckoutGateway, PaymentGateway, SubscriptionGateway
 {
     public function __construct(
         protected readonly string $profileId = '',
@@ -56,6 +63,122 @@ class PayTabsGateway implements PaymentGateway, SubscriptionGateway
     public function displayName(): string
     {
         return 'PayTabs';
+    }
+
+    // ------------------------------------------------------------------
+    // CheckoutGateway
+    // ------------------------------------------------------------------
+
+    /**
+     * @return array<int, string>
+     */
+    public function supportedCurrencies(): array
+    {
+        return ['SAR', 'AED', 'KWD', 'BHD', 'QAR', 'OMR', 'JOD', 'EGP', 'USD', 'EUR', 'GBP'];
+    }
+
+    public function supportsSubscriptions(): bool
+    {
+        return true;
+    }
+
+    public function initiateCheckout(CheckoutSession $session): CheckoutResult
+    {
+        // Idempotent re-call: if a PayPage was already created for this session
+        // and is still usable, return the existing redirect rather than POSTing
+        // a duplicate /payment/request.
+        if ($session->gateway_session_id !== null) {
+            $existing = $this->retrievePayPage($session->gateway_session_id);
+            $existingUrl = (string) ($existing['redirect_url'] ?? ($session->result_payload['url'] ?? ''));
+            if ($existingUrl !== '') {
+                return new RedirectCheckout(
+                    gatewaySessionId: (string) $session->gateway_session_id,
+                    url: $existingUrl,
+                );
+            }
+        }
+
+        $plan = $session->plan;
+        if ($plan === null) {
+            throw new RuntimeException("Checkout session {$session->public_id} has no plan.");
+        }
+
+        $profileId = (int) (config('billing.gateways.paytabs.profile_id') ?: $this->profileId);
+        $isSubscription = $session->intent === CheckoutSession::INTENT_SUBSCRIPTION;
+
+        $payload = [
+            'profile_id' => $profileId,
+            'tran_type' => 'sale',
+            'tran_class' => $isSubscription ? 'recurring' : 'ecom',
+            'cart_id' => $session->public_id,
+            'cart_description' => $plan->name,
+            'cart_currency' => strtoupper((string) $session->currency),
+            'cart_amount' => number_format((int) $session->amount_cents / 100, 2, '.', ''),
+            'return' => route('checkout.return', ['session' => $session->public_id]),
+            'callback' => route('checkout.return', ['session' => $session->public_id]),
+        ];
+
+        if ($isSubscription) {
+            // PayTabs treats `is_recurring` on the first PayPage as a flag to
+            // tokenize the card for future MIT charges via tran_ref.
+            $payload['is_recurring'] = true;
+        }
+
+        $response = $this->http()->post('/payment/request', $payload);
+
+        if (! $response->successful()) {
+            throw new RuntimeException('PayTabs /payment/request failed: '.$response->status().' '.$response->body());
+        }
+
+        $body = (array) $response->json();
+        $tranRef = (string) ($body['tran_ref'] ?? '');
+        $redirectUrl = (string) ($body['redirect_url'] ?? '');
+
+        if ($tranRef === '' || $redirectUrl === '') {
+            throw new RuntimeException('PayTabs /payment/request returned no tran_ref or redirect_url: '.$response->body());
+        }
+
+        $result = new RedirectCheckout(
+            gatewaySessionId: $tranRef,
+            url: $redirectUrl,
+        );
+
+        $session->forceFill([
+            'gateway' => 'paytabs',
+            'gateway_session_id' => $result->gatewaySessionId,
+            'status' => CheckoutSession::STATUS_AWAITING_PAYMENT,
+            'result_kind' => $result->kind,
+            'result_payload' => $result->toPayload(),
+        ])->save();
+
+        return $result;
+    }
+
+    /**
+     * Best-effort re-fetch of a previously created PayPage. PayTabs exposes
+     * `/payment/query` which echoes back tran_ref + (when still open) the
+     * redirect_url. Returns an empty array on any failure so the caller can
+     * fall through to creating a fresh PayPage.
+     *
+     * @return array<string, mixed>
+     */
+    protected function retrievePayPage(string $tranRef): array
+    {
+        try {
+            $profileId = (int) (config('billing.gateways.paytabs.profile_id') ?: $this->profileId);
+            $response = $this->http()->post('/payment/query', [
+                'profile_id' => $profileId,
+                'tran_ref' => $tranRef,
+            ]);
+
+            if (! $response->successful()) {
+                return [];
+            }
+
+            return (array) $response->json();
+        } catch (Throwable) {
+            return [];
+        }
     }
 
     // ------------------------------------------------------------------
@@ -298,12 +421,87 @@ class PayTabsGateway implements PaymentGateway, SubscriptionGateway
             throw new RuntimeException('PayTabs IPN signature verification failed.');
         }
 
-        $event->forceFill([
-            'status' => 'processed',
-            'processed_at' => now(),
-        ])->save();
+        try {
+            $payload = $request->json()->all();
+            $this->onPaytabsCallback((array) $payload);
+
+            $event->forceFill([
+                'status' => 'processed',
+                'processed_at' => now(),
+            ])->save();
+        } catch (Throwable $e) {
+            $event->forceFill([
+                'status' => 'failed',
+                'error_message' => $e->getMessage(),
+                'processing_attempts' => (int) $event->processing_attempts + 1,
+            ])->save();
+
+            Log::warning('PayTabs webhook processing failed', [
+                'event_id' => $event->id,
+                'gateway_event_id' => $event->gateway_event_id,
+                'error' => $e->getMessage(),
+            ]);
+        }
 
         return $event->fresh();
+    }
+
+    /**
+     * Route a verified PayTabs IPN through CheckoutService when it represents
+     * an Authorised (response_status='A') payment for a known CheckoutSession.
+     *
+     * @param  array<string, mixed>  $payload
+     */
+    private function onPaytabsCallback(array $payload): void
+    {
+        $status = (string) ($payload['payment_result']['response_status'] ?? '');
+        if ($status !== 'A') {
+            return;
+        }
+
+        $tranRef = (string) ($payload['tran_ref'] ?? '');
+        if ($tranRef === '') {
+            return;
+        }
+
+        $session = CheckoutSession::query()
+            ->where('gateway', 'paytabs')
+            ->where('gateway_session_id', $tranRef)
+            ->first();
+
+        if ($session === null) {
+            Log::warning('PayTabs IPN: no matching CheckoutSession', ['tran_ref' => $tranRef]);
+
+            return;
+        }
+
+        if ($session->status === CheckoutSession::STATUS_COMPLETED) {
+            return;
+        }
+
+        $currency = strtoupper((string) ($payload['cart_currency'] ?? $session->currency));
+        $cartAmount = $payload['cart_amount'] ?? null;
+        $amountPaidCents = is_numeric($cartAmount)
+            ? (int) round(((float) $cartAmount) * 100)
+            : (int) $session->amount_cents;
+
+        $checkout = app(CheckoutService::class);
+        $checkout->complete($session, [
+            'gateway_subscription_id' => $tranRef,
+            'status' => 'active',
+            'unit_amount_cents' => (int) $session->amount_cents,
+            'quantity' => 1,
+            'current_period_start' => now(),
+            'current_period_end' => now()->addMonth(),
+            'gateway_invoice_id' => $tranRef,
+            'invoice_number' => 'INV-'.$session->public_id,
+            'gateway_payment_id' => $tranRef,
+            'paid_amount_cents' => $amountPaidCents,
+            'amount_paid_cents' => $amountPaidCents,
+            'total_cents' => $amountPaidCents,
+            'currency' => $currency,
+            'payment_metadata' => ['paytabs' => $payload],
+        ]);
     }
 
     // ------------------------------------------------------------------

@@ -2,19 +2,27 @@
 
 namespace App\Support\Billing\Fawry;
 
+use App\Models\CheckoutSession;
 use App\Models\Payment;
 use App\Models\Plan;
 use App\Models\Subscription;
 use App\Models\Tenant;
 use App\Models\WebhookEvent;
+use App\Support\Billing\Checkout\CheckoutResult;
+use App\Support\Billing\Checkout\CheckoutService;
+use App\Support\Billing\Checkout\KioskReferenceCheckout;
+use App\Support\Billing\CheckoutGateway;
 use App\Support\Billing\PaymentGateway;
 use App\Support\Billing\SubscriptionGateway;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use RuntimeException;
+use Throwable;
 
 /**
  * Fawry driver — Phase 3.2 scaffold.
@@ -36,7 +44,7 @@ use RuntimeException;
  * HTTP is done through Illuminate\Support\Facades\Http — there is no
  * official composer SDK in active maintenance, so we sign/verify by hand.
  */
-class FawryGateway implements PaymentGateway, SubscriptionGateway
+class FawryGateway implements CheckoutGateway, PaymentGateway, SubscriptionGateway
 {
     public function id(): string
     {
@@ -46,6 +54,123 @@ class FawryGateway implements PaymentGateway, SubscriptionGateway
     public function displayName(): string
     {
         return 'Fawry';
+    }
+
+    // ------------------------------------------------------------------
+    // CheckoutGateway
+    // ------------------------------------------------------------------
+
+    /**
+     * @return array<int, string>
+     */
+    public function supportedCurrencies(): array
+    {
+        return ['EGP'];
+    }
+
+    public function supportsSubscriptions(): bool
+    {
+        return true;
+    }
+
+    /**
+     * Create a Fawry Pay-At-Fawry kiosk reference for the given checkout
+     * session. Idempotent — re-call with an existing `gateway_session_id`
+     * returns the same KioskReferenceCheckout payload without re-POSTing.
+     */
+    public function initiateCheckout(CheckoutSession $session): CheckoutResult
+    {
+        if ($session->gateway_session_id !== null && $session->status === CheckoutSession::STATUS_AWAITING_PAYMENT) {
+            $payload = (array) ($session->result_payload ?? []);
+
+            return new KioskReferenceCheckout(
+                gatewaySessionId: (string) $session->gateway_session_id,
+                reference: (string) ($payload['reference'] ?? $session->gateway_session_id),
+                instructionsUrl: $payload['instructions_url'] ?? 'https://www.fawry.com/howto',
+                expiresAt: $session->expires_at?->getTimestamp(),
+            );
+        }
+
+        $plan = $session->plan;
+        if ($plan === null) {
+            throw new RuntimeException("Checkout session {$session->public_id} has no plan.");
+        }
+
+        $merchantCode = (string) config('billing.gateways.fawry.merchant_code');
+        $customerProfileId = (string) ($session->tenant_id ?? '');
+        $merchantRefNum = $session->public_id;
+        $amount = $this->formatAmount((int) $session->amount_cents / 100);
+
+        $chargeItems = [[
+            'itemId' => (string) $plan->id,
+            'description' => (string) $plan->name,
+            'price' => $amount,
+            'quantity' => 1,
+        ]];
+
+        $itemDetailsString = '';
+        foreach ($chargeItems as $item) {
+            $itemDetailsString .= $item['itemId'].$this->formatAmount($item['price']).$item['quantity'];
+        }
+
+        $body = [
+            'merchantCode' => $merchantCode,
+            'merchantRefNum' => $merchantRefNum,
+            'customerProfileId' => $customerProfileId,
+            'customerName' => $session->user?->name ?? 'NA',
+            'customerMobile' => (string) ($session->metadata['customer_mobile'] ?? '01000000000'),
+            'customerEmail' => $session->user?->email ?? '',
+            'paymentMethod' => 'PAYATFAWRY',
+            'amount' => $amount,
+            'currencyCode' => 'EGP',
+            'chargeItems' => $chargeItems,
+            'signature' => $this->signRequest([
+                $merchantCode,
+                $merchantRefNum,
+                $customerProfileId,
+                'PAYATFAWRY',
+                $amount,
+                $itemDetailsString,
+            ]),
+        ];
+
+        $response = $this->http()
+            ->post('/ECommerceWeb/Fawry/payments/charge', $body)
+            ->throw()
+            ->json();
+
+        $statusCode = (int) ($response['statusCode'] ?? 0);
+        if ($statusCode !== 200) {
+            throw new RuntimeException('Fawry charge: non-200 statusCode — '.json_encode($response));
+        }
+
+        $referenceNumber = (string) ($response['referenceNumber'] ?? '');
+        if ($referenceNumber === '') {
+            throw new RuntimeException('Fawry charge: missing referenceNumber in response — '.json_encode($response));
+        }
+
+        $expirationTime = $response['expirationTime'] ?? null;
+        $expiresAt = is_numeric($expirationTime) ? (int) floor(((float) $expirationTime) / 1000) : null;
+
+        $result = new KioskReferenceCheckout(
+            gatewaySessionId: $referenceNumber,
+            reference: $referenceNumber,
+            instructionsUrl: 'https://www.fawry.com/howto',
+            expiresAt: $expiresAt,
+        );
+
+        $session->forceFill([
+            'gateway' => 'fawry',
+            'gateway_session_id' => $result->gatewaySessionId,
+            'status' => CheckoutSession::STATUS_AWAITING_PAYMENT,
+            'result_kind' => $result->kind,
+            'result_payload' => $result->toPayload(),
+            'expires_at' => $expiresAt !== null
+                ? Carbon::createFromTimestamp($expiresAt)
+                : $session->expires_at,
+        ])->save();
+
+        return $result;
     }
 
     // ------------------------------------------------------------------
@@ -238,12 +363,85 @@ class FawryGateway implements PaymentGateway, SubscriptionGateway
             throw new RuntimeException('Fawry signature verification failed');
         }
 
-        $event->forceFill([
-            'status' => 'processed',
-            'processed_at' => now(),
-        ])->save();
+        try {
+            $this->onFawryNotification((array) $payload);
+
+            $event->forceFill([
+                'status' => 'processed',
+                'processed_at' => now(),
+            ])->save();
+        } catch (Throwable $e) {
+            $event->forceFill([
+                'status' => 'failed',
+                'error_message' => $e->getMessage(),
+                'processing_attempts' => (int) $event->processing_attempts + 1,
+            ])->save();
+
+            Log::warning('Fawry webhook processing failed', [
+                'event_id' => $event->id,
+                'gateway_event_id' => $event->gateway_event_id,
+                'error' => $e->getMessage(),
+            ]);
+        }
 
         return $event->fresh();
+    }
+
+    /**
+     * Route a verified Fawry Server Notification V2 through CheckoutService
+     * when `paymentStatus == 'PAID'` and a matching CheckoutSession exists.
+     *
+     * @param  array<string, mixed>  $payload
+     */
+    private function onFawryNotification(array $payload): void
+    {
+        $status = (string) ($payload['paymentStatus'] ?? $payload['orderStatus'] ?? '');
+        if ($status !== 'PAID') {
+            return;
+        }
+
+        $fawryRef = (string) ($payload['fawryRefNumber'] ?? '');
+        if ($fawryRef === '') {
+            return;
+        }
+
+        $session = CheckoutSession::query()
+            ->where('gateway', 'fawry')
+            ->where('gateway_session_id', $fawryRef)
+            ->first();
+
+        if ($session === null) {
+            Log::warning('Fawry notification: no matching CheckoutSession', ['fawry_ref' => $fawryRef]);
+
+            return;
+        }
+
+        if ($session->status === CheckoutSession::STATUS_COMPLETED) {
+            return;
+        }
+
+        $paymentAmount = $payload['paymentAmount'] ?? $payload['orderAmount'] ?? null;
+        $amountPaidCents = is_numeric($paymentAmount)
+            ? (int) round(((float) $paymentAmount) * 100)
+            : (int) $session->amount_cents;
+
+        $checkout = app(CheckoutService::class);
+        $checkout->complete($session, [
+            'gateway_subscription_id' => $fawryRef,
+            'status' => 'active',
+            'unit_amount_cents' => (int) $session->amount_cents,
+            'quantity' => 1,
+            'current_period_start' => now(),
+            'current_period_end' => now()->addMonth(),
+            'gateway_invoice_id' => $fawryRef,
+            'invoice_number' => 'INV-'.$session->public_id,
+            'gateway_payment_id' => $fawryRef,
+            'paid_amount_cents' => $amountPaidCents,
+            'amount_paid_cents' => $amountPaidCents,
+            'total_cents' => $amountPaidCents,
+            'currency' => 'EGP',
+            'payment_metadata' => ['fawry' => $payload],
+        ]);
     }
 
     // ------------------------------------------------------------------

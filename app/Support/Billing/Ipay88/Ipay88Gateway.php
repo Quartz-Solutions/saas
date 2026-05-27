@@ -2,13 +2,19 @@
 
 namespace App\Support\Billing\Ipay88;
 
+use App\Models\CheckoutSession;
 use App\Models\Payment;
 use App\Models\WebhookEvent;
+use App\Support\Billing\Checkout\CheckoutResult;
+use App\Support\Billing\Checkout\CheckoutService;
+use App\Support\Billing\Checkout\FormPostCheckout;
+use App\Support\Billing\CheckoutGateway;
 use App\Support\Billing\PaymentGateway;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use RuntimeException;
 
@@ -42,7 +48,7 @@ use RuntimeException;
  *     MerchantKey is part of the signed concatenation, SHA-256 mode is
  *     effectively a keyed hash even without HMAC.
  */
-class Ipay88Gateway implements PaymentGateway
+class Ipay88Gateway implements CheckoutGateway, PaymentGateway
 {
     public function __construct(
         protected readonly string $merchantCode = '',
@@ -211,6 +217,94 @@ class Ipay88Gateway implements PaymentGateway
 
         // Current standard: HMAC-SHA512, base64-encoded.
         return base64_encode(hash_hmac('sha512', $concat, $this->merchantKey(), true));
+    }
+
+    // ------------------------------------------------------------------
+    // CheckoutGateway
+    // ------------------------------------------------------------------
+
+    /** @return array<int, string> */
+    public function supportedCurrencies(): array
+    {
+        return ['MYR', 'SGD', 'IDR', 'PHP', 'THB', 'VND', 'CNY', 'HKD', 'USD'];
+    }
+
+    public function supportsSubscriptions(): bool
+    {
+        return false;
+    }
+
+    /**
+     * Country-aware form-post endpoint (iPay88 epayment/entry.asp).
+     */
+    protected function entryEndpoint(): string
+    {
+        $tld = match ($this->country()) {
+            'SG' => 'com.sg',
+            'ID' => 'co.id',
+            'PH' => 'com.ph',
+            'TH' => 'co.th',
+            'VN' => 'vn',
+            default => 'com.my',
+        };
+
+        $sub = $this->environment() === 'production' ? 'payment' : 'sandbox';
+
+        return "https://{$sub}.ipay88.{$tld}/epayment/entry.asp";
+    }
+
+    /**
+     * Build a signed iPay88 form-post bundle. Idempotent — RefNo IS the
+     * session's public_id, so re-calling rebuilds the same signed params.
+     */
+    public function initiateCheckout(CheckoutSession $session): CheckoutResult
+    {
+        $plan = $session->plan;
+        if ($plan === null) {
+            throw new RuntimeException("Checkout session {$session->public_id} has no plan.");
+        }
+
+        $refNo = $session->public_id;
+        $currency = strtoupper((string) $session->currency);
+        $amountDecimal = number_format((int) $session->amount_cents / 100, 2, '.', '');
+
+        $user = $session->user;
+
+        $params = [
+            'MerchantCode' => $this->merchantCode(),
+            'PaymentId' => '',
+            'RefNo' => $refNo,
+            'Amount' => $amountDecimal,
+            'Currency' => $currency,
+            'ProdDesc' => $plan->name,
+            'UserName' => (string) ($user?->name ?? 'NA'),
+            'UserEmail' => (string) ($user?->email ?? 'na@example.com'),
+            'UserContact' => '0000000000',
+            'Remark' => '',
+            'Lang' => 'UTF-8',
+            'SignatureType' => $this->signatureType(),
+            'ResponseURL' => route('checkout.return', ['session' => $session->public_id]),
+            'BackendURL' => route('webhooks.gateway', ['gateway' => 'ipay88']),
+        ];
+
+        $params['Signature'] = $this->signRequest($refNo, $amountDecimal, $currency);
+
+        $result = new FormPostCheckout(
+            gatewaySessionId: $refNo,
+            action: $this->entryEndpoint(),
+            params: $params,
+            method: 'POST',
+        );
+
+        $session->forceFill([
+            'gateway' => 'ipay88',
+            'gateway_session_id' => $refNo,
+            'status' => CheckoutSession::STATUS_AWAITING_PAYMENT,
+            'result_kind' => $result->kind,
+            'result_payload' => $result->toPayload(),
+        ])->save();
+
+        return $result;
     }
 
     // ------------------------------------------------------------------
@@ -436,6 +530,10 @@ class Ipay88Gateway implements PaymentGateway
             ['_response_body' => 'RECEIVEOK'],
         );
 
+        if ((string) ($payload['Status'] ?? '') === '1') {
+            $this->onCheckoutSuccess($payload);
+        }
+
         $event->forceFill([
             'payload' => $payloadWithReply,
             'status' => 'processed',
@@ -443,6 +541,45 @@ class Ipay88Gateway implements PaymentGateway
         ])->save();
 
         return $event->fresh();
+    }
+
+    /**
+     * Reconcile a verified iPay88 success callback with its CheckoutSession.
+     *
+     * @param  array<string, mixed>  $payload
+     */
+    private function onCheckoutSuccess(array $payload): void
+    {
+        $refNo = (string) ($payload['RefNo'] ?? '');
+        if ($refNo === '') {
+            return;
+        }
+
+        $session = CheckoutSession::query()
+            ->where('gateway', 'ipay88')
+            ->where('gateway_session_id', $refNo)
+            ->first();
+
+        if ($session === null) {
+            Log::warning('iPay88 success callback: no matching CheckoutSession', ['RefNo' => $refNo]);
+
+            return;
+        }
+
+        if ($session->status === CheckoutSession::STATUS_COMPLETED) {
+            return;
+        }
+
+        $amount = (float) ($payload['Amount'] ?? 0);
+        $currency = strtoupper((string) ($payload['Currency'] ?? $session->currency));
+        $transId = (string) ($payload['TransId'] ?? $payload['PaymentId'] ?? $refNo);
+
+        app(CheckoutService::class)->complete($session, [
+            'gateway_payment_id' => $transId,
+            'amount_paid_cents' => (int) round($amount * 100),
+            'paid_amount_cents' => (int) round($amount * 100),
+            'currency' => $currency,
+        ]);
     }
 
     // ------------------------------------------------------------------

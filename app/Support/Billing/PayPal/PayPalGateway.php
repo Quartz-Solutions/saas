@@ -2,11 +2,16 @@
 
 namespace App\Support\Billing\PayPal;
 
+use App\Models\CheckoutSession;
 use App\Models\Payment;
 use App\Models\Plan;
 use App\Models\Subscription;
 use App\Models\Tenant;
 use App\Models\WebhookEvent;
+use App\Support\Billing\Checkout\CheckoutResult;
+use App\Support\Billing\Checkout\CheckoutService;
+use App\Support\Billing\Checkout\RedirectCheckout;
+use App\Support\Billing\CheckoutGateway;
 use App\Support\Billing\PaymentGateway;
 use App\Support\Billing\SubscriptionGateway;
 use Illuminate\Http\Request;
@@ -36,7 +41,7 @@ use Throwable;
  * wired and tested while the gateway-specific calls are implemented in
  * follow-up tickets.
  */
-class PayPalGateway implements PaymentGateway, SubscriptionGateway
+class PayPalGateway implements CheckoutGateway, PaymentGateway, SubscriptionGateway
 {
     public function id(): string
     {
@@ -46,6 +51,173 @@ class PayPalGateway implements PaymentGateway, SubscriptionGateway
     public function displayName(): string
     {
         return 'PayPal';
+    }
+
+    // ------------------------------------------------------------------
+    // CheckoutGateway
+    // ------------------------------------------------------------------
+
+    /**
+     * PayPal's published settlement currencies.
+     *
+     * @return array<int, string>
+     */
+    public function supportedCurrencies(): array
+    {
+        return [
+            'USD', 'EUR', 'GBP', 'AUD', 'CAD', 'JPY', 'SGD', 'HKD', 'NZD',
+            'CHF', 'SEK', 'NOK', 'DKK', 'PLN', 'CZK', 'HUF', 'MXN', 'BRL',
+            'ILS', 'PHP', 'THB', 'TWD', 'MYR',
+        ];
+    }
+
+    public function supportsSubscriptions(): bool
+    {
+        return true;
+    }
+
+    /**
+     * Create (or re-resolve) the PayPal order/subscription and return the
+     * approve-URL redirect. Idempotent: if the local session already has a
+     * gateway_session_id, refetch the existing PayPal resource instead of
+     * duplicating it.
+     */
+    public function initiateCheckout(CheckoutSession $session): CheckoutResult
+    {
+        $plan = $session->plan;
+        if ($plan === null) {
+            throw new RuntimeException("Checkout session {$session->public_id} has no plan.");
+        }
+
+        $isSubscription = $session->intent === CheckoutSession::INTENT_SUBSCRIPTION;
+
+        if ($session->gateway_session_id !== null && $session->gateway_session_id !== '') {
+            $existing = $this->fetchExistingResource($session->gateway_session_id, $isSubscription);
+            if ($existing !== null) {
+                $approveUrl = $this->extractApproveUrl((array) ($existing['links'] ?? []));
+                if ($approveUrl !== null) {
+                    $result = new RedirectCheckout(
+                        gatewaySessionId: (string) ($existing['id'] ?? $session->gateway_session_id),
+                        url: $approveUrl,
+                        expiresAt: null,
+                    );
+                    $this->persistResult($session, $result);
+
+                    return $result;
+                }
+            }
+            // Fall through and create a fresh resource if refetch failed.
+        }
+
+        if ($isSubscription) {
+            $paypalPlanId = (string) ($plan->gateway_ids['paypal'] ?? '');
+            if ($paypalPlanId === '') {
+                throw new RuntimeException("Plan [{$plan->slug}] has no PayPal plan id (gateway_ids.paypal). Sync the Plan first (Phase 6).");
+            }
+
+            $payload = [
+                'plan_id' => $paypalPlanId,
+                'custom_id' => $session->public_id,
+            ];
+            $response = Http::withToken($this->accessToken())
+                ->acceptJson()
+                ->asJson()
+                ->post($this->baseUrl().'/v1/billing/subscriptions', $payload);
+
+            if (! $response->successful()) {
+                throw new RuntimeException('PayPal create-subscription failed: '.$response->status().' '.$response->body());
+            }
+
+            $body = (array) $response->json();
+        } else {
+            $payload = [
+                'intent' => 'CAPTURE',
+                'purchase_units' => [[
+                    'reference_id' => $session->public_id,
+                    'amount' => [
+                        'currency_code' => strtoupper((string) $session->currency),
+                        'value' => $this->formatAmount((int) $session->amount_cents),
+                    ],
+                ]],
+            ];
+            $response = Http::withToken($this->accessToken())
+                ->acceptJson()
+                ->asJson()
+                ->post($this->baseUrl().'/v2/checkout/orders', $payload);
+
+            if (! $response->successful()) {
+                throw new RuntimeException('PayPal create-order failed: '.$response->status().' '.$response->body());
+            }
+
+            $body = (array) $response->json();
+        }
+
+        $resourceId = (string) ($body['id'] ?? '');
+        $approveUrl = $this->extractApproveUrl((array) ($body['links'] ?? []));
+
+        if ($resourceId === '' || $approveUrl === null) {
+            throw new RuntimeException('PayPal response missing id or approve link.');
+        }
+
+        $result = new RedirectCheckout(
+            gatewaySessionId: $resourceId,
+            url: $approveUrl,
+            expiresAt: null,
+        );
+
+        $this->persistResult($session, $result);
+
+        return $result;
+    }
+
+    /**
+     * Re-fetch an existing PayPal order or subscription by id for idempotency.
+     *
+     * @return array<string, mixed>|null
+     */
+    protected function fetchExistingResource(string $id, bool $isSubscription): ?array
+    {
+        $url = $isSubscription
+            ? $this->baseUrl().'/v1/billing/subscriptions/'.$id
+            : $this->baseUrl().'/v2/checkout/orders/'.$id;
+
+        try {
+            $response = Http::withToken($this->accessToken())
+                ->acceptJson()
+                ->get($url);
+            if (! $response->successful()) {
+                return null;
+            }
+
+            return (array) $response->json();
+        } catch (Throwable) {
+            return null;
+        }
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $links
+     */
+    private function extractApproveUrl(array $links): ?string
+    {
+        foreach ($links as $link) {
+            if (($link['rel'] ?? null) === 'approve' && isset($link['href'])) {
+                return (string) $link['href'];
+            }
+        }
+
+        return null;
+    }
+
+    private function persistResult(CheckoutSession $session, RedirectCheckout $result): void
+    {
+        $session->forceFill([
+            'gateway' => 'paypal',
+            'gateway_session_id' => $result->gatewaySessionId,
+            'status' => CheckoutSession::STATUS_AWAITING_PAYMENT,
+            'result_kind' => $result->kind,
+            'result_payload' => $result->toPayload(),
+        ])->save();
     }
 
     // ------------------------------------------------------------------
@@ -377,6 +549,8 @@ class PayPalGateway implements PaymentGateway, SubscriptionGateway
             $payload = $request->json()->all();
             $eventType = (string) ($payload['event_type'] ?? '');
 
+            $this->dispatchEvent($eventType, $payload);
+
             $event->forceFill([
                 'event_type' => $eventType !== '' ? $eventType : $event->event_type,
                 'status' => 'processed',
@@ -397,6 +571,85 @@ class PayPalGateway implements PaymentGateway, SubscriptionGateway
         }
 
         return $event->fresh();
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function dispatchEvent(string $eventType, array $payload): void
+    {
+        match (true) {
+            $eventType === 'BILLING.SUBSCRIPTION.ACTIVATED',
+            $eventType === 'PAYMENT.CAPTURE.COMPLETED',
+            $eventType === 'CHECKOUT.ORDER.APPROVED' => $this->onCheckoutCompleted($eventType, $payload),
+            default => null,
+        };
+    }
+
+    /**
+     * Reconcile a completion-style PayPal webhook with the local CheckoutSession.
+     *
+     * @param  array<string, mixed>  $payload
+     */
+    private function onCheckoutCompleted(string $eventType, array $payload): void
+    {
+        $resource = (array) ($payload['resource'] ?? []);
+        $resourceId = (string) ($resource['id'] ?? '');
+        if ($resourceId === '') {
+            return;
+        }
+
+        // For PAYMENT.CAPTURE.COMPLETED the capture id is resource.id; the
+        // owning order id lives in supplementary_data.related_ids.order_id.
+        $orderOrSubId = $resourceId;
+        if ($eventType === 'PAYMENT.CAPTURE.COMPLETED') {
+            $orderOrSubId = (string) ($resource['supplementary_data']['related_ids']['order_id'] ?? $resourceId);
+        }
+
+        $session = CheckoutSession::query()
+            ->where('gateway', 'paypal')
+            ->where(function ($q) use ($orderOrSubId, $resourceId) {
+                $q->where('gateway_session_id', $orderOrSubId);
+                if ($resourceId !== $orderOrSubId) {
+                    $q->orWhere('gateway_session_id', $resourceId);
+                }
+            })
+            ->first();
+
+        if ($session === null) {
+            Log::info('PayPal webhook: no matching CheckoutSession', [
+                'event_type' => $eventType,
+                'resource_id' => $resourceId,
+                'order_or_sub_id' => $orderOrSubId,
+            ]);
+
+            return;
+        }
+
+        if ($session->status === CheckoutSession::STATUS_COMPLETED) {
+            return;
+        }
+
+        $isSubscription = $eventType === 'BILLING.SUBSCRIPTION.ACTIVATED';
+        $amountValue = (float) ($resource['amount']['value']
+            ?? $resource['billing_info']['last_payment']['amount']['value']
+            ?? 0);
+        $amountCents = (int) round($amountValue * 100);
+        $currency = strtoupper((string) (
+            $resource['amount']['currency_code']
+            ?? $resource['billing_info']['last_payment']['amount']['currency_code']
+            ?? $session->currency
+        ));
+
+        $checkout = app(CheckoutService::class);
+        $checkout->complete($session, [
+            'gateway_subscription_id' => $isSubscription ? $resourceId : null,
+            'gateway_invoice_id' => null,
+            'gateway_payment_id' => $eventType === 'PAYMENT.CAPTURE.COMPLETED' ? $resourceId : null,
+            'amount_paid_cents' => $amountCents > 0 ? $amountCents : (int) $session->amount_cents,
+            'paid_amount_cents' => $amountCents > 0 ? $amountCents : (int) $session->amount_cents,
+            'currency' => $currency,
+        ]);
     }
 
     /**
