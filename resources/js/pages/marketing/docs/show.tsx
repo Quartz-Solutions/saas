@@ -1,5 +1,6 @@
-import { Head, Link } from '@inertiajs/react';
+import { Link } from '@inertiajs/react';
 import { ArrowLeft } from 'lucide-react';
+import SeoMeta from '@/components/marketing/seo-meta';
 import { Button } from '@/components/ui/button';
 import docsRoutes from '@/routes/marketing/docs';
 
@@ -21,12 +22,13 @@ type Props = {
 export default function DocsShow({ page }: Props) {
     return (
         <>
-            <Head title={page.meta_title ?? page.title}>
-                {page.meta_description && (
-                    <meta name="description" content={page.meta_description} />
-                )}
-                {page.no_index && <meta name="robots" content="noindex" />}
-            </Head>
+            <SeoMeta
+                pageTitle={page.meta_title ?? page.title}
+                title={page.meta_title ?? page.title}
+                description={page.meta_description ?? page.title}
+                type="article"
+                noIndex={page.no_index}
+            />
 
             <article
                 className="mx-auto w-full max-w-3xl px-4 py-12 md:px-6 md:py-16"

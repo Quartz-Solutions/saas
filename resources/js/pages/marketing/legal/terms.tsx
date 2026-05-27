@@ -1,4 +1,4 @@
-import { Head } from '@inertiajs/react';
+import SeoMeta from '@/components/marketing/seo-meta';
 
 type Props = {
     type: string;
@@ -9,12 +9,11 @@ type Props = {
 export default function TermsPage({ effectiveDate, companyName }: Props) {
     return (
         <>
-            <Head title="Terms of Service">
-                <meta
-                    name="description"
-                    content={`${companyName} terms of service — the rules for using the service.`}
-                />
-            </Head>
+            <SeoMeta
+                pageTitle="Terms of Service"
+                title={`Terms of Service — ${companyName}`}
+                description={`${companyName} terms of service — the rules for using the service.`}
+            />
 
             <article
                 className="mx-auto w-full max-w-3xl px-4 py-12 md:px-6 md:py-16"

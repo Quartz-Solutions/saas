@@ -1,5 +1,6 @@
-import { Head, Link } from '@inertiajs/react';
+import { Link } from '@inertiajs/react';
 import { ArrowRight, BookOpen } from 'lucide-react';
+import SeoMeta from '@/components/marketing/seo-meta';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import docsRoutes from '@/routes/marketing/docs';
 
@@ -16,12 +17,11 @@ type Props = {
 export default function DocsIndex({ pages }: Props) {
     return (
         <>
-            <Head title="Documentation">
-                <meta
-                    name="description"
-                    content="Documentation, guides and references for the boilerplate."
-                />
-            </Head>
+            <SeoMeta
+                pageTitle="Documentation"
+                title="Documentation — guides and references"
+                description="Documentation, guides and references for the boilerplate."
+            />
 
             <section
                 className="mx-auto w-full max-w-5xl px-4 py-16 md:px-6 md:py-24"

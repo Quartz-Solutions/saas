@@ -1,5 +1,6 @@
-import { Head, Link, usePage } from '@inertiajs/react';
+import { Link, usePage } from '@inertiajs/react';
 import { Check } from 'lucide-react';
+import SeoMeta from '@/components/marketing/seo-meta';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -46,12 +47,11 @@ export default function MarketingPricing({ plans, trialDays }: Props) {
 
     return (
         <>
-            <Head title="Pricing">
-                <meta
-                    name="description"
-                    content="Simple, transparent pricing for every stage of your SaaS."
-                />
-            </Head>
+            <SeoMeta
+                pageTitle="Pricing"
+                title="Pricing — Simple, transparent plans"
+                description="Simple, transparent pricing for every stage of your SaaS. Start free, upgrade when you're ready, cancel any time."
+            />
 
             <section
                 className="mx-auto w-full max-w-6xl px-4 py-16 md:px-6 md:py-24"

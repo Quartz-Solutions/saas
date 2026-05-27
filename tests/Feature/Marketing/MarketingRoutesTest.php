@@ -3,6 +3,7 @@
 namespace Tests\Feature\Marketing;
 
 use App\Models\CmsPage;
+use Database\Seeders\CmsPagesSeeder;
 use Database\Seeders\PlansSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia;
@@ -150,6 +151,71 @@ class MarketingRoutesTest extends TestCase
     public function test_legal_show_404s_for_unknown_type(): void
     {
         $this->get('/legal/refund')->assertNotFound();
+    }
+
+    public function test_sitemap_returns_xml_with_static_marketing_routes(): void
+    {
+        $response = $this->get('/sitemap.xml');
+        $response->assertOk();
+        $response->assertHeader('Content-Type', 'application/xml; charset=UTF-8');
+
+        $body = $response->getContent();
+        $this->assertStringContainsString('<?xml version="1.0" encoding="UTF-8"?>', $body);
+        $this->assertStringContainsString('<urlset', $body);
+        $this->assertStringContainsString(route('home'), $body);
+        $this->assertStringContainsString(route('marketing.pricing'), $body);
+        $this->assertStringContainsString(route('marketing.docs.index'), $body);
+        $this->assertStringContainsString(route('marketing.legal.show', ['type' => 'privacy']), $body);
+    }
+
+    public function test_sitemap_includes_published_cms_pages_and_skips_drafts_and_noindex(): void
+    {
+        CmsPage::query()->create([
+            'slug' => 'published-page',
+            'title' => 'Published',
+            'locale' => 'en',
+            'status' => CmsPage::STATUS_PUBLISHED,
+            'template' => CmsPage::TEMPLATE_DOCS,
+            'published_at' => now()->subDay(),
+            'no_index' => false,
+        ]);
+        CmsPage::query()->create([
+            'slug' => 'draft-page',
+            'title' => 'Draft',
+            'locale' => 'en',
+            'status' => CmsPage::STATUS_DRAFT,
+            'template' => CmsPage::TEMPLATE_DOCS,
+            'no_index' => false,
+        ]);
+        CmsPage::query()->create([
+            'slug' => 'noindex-page',
+            'title' => 'Noindex',
+            'locale' => 'en',
+            'status' => CmsPage::STATUS_PUBLISHED,
+            'template' => CmsPage::TEMPLATE_DOCS,
+            'published_at' => now()->subDay(),
+            'no_index' => true,
+        ]);
+
+        $body = $this->get('/sitemap.xml')->getContent();
+
+        $this->assertStringContainsString('/docs/published-page', $body);
+        $this->assertStringNotContainsString('/docs/draft-page', $body);
+        $this->assertStringNotContainsString('/docs/noindex-page', $body);
+    }
+
+    public function test_cms_pages_seeder_creates_three_published_docs(): void
+    {
+        $this->seed(CmsPagesSeeder::class);
+
+        $this->assertSame(3, CmsPage::query()->count());
+        $this->assertNotNull(CmsPage::query()->where('slug', 'getting-started')->first());
+        $this->assertNotNull(CmsPage::query()->where('slug', 'deployment')->first());
+        $this->assertNotNull(CmsPage::query()->where('slug', 'api-reference')->first());
+
+        // Idempotent — re-seed doesn't duplicate.
+        $this->seed(CmsPagesSeeder::class);
+        $this->assertSame(3, CmsPage::query()->count());
     }
 
     public function test_cookie_consent_accepted_sets_cookie(): void

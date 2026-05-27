@@ -1,4 +1,5 @@
-import { Head, Link, usePage } from '@inertiajs/react';
+import { Link, usePage } from '@inertiajs/react';
+import SeoMeta from '@/components/marketing/seo-meta';
 import {
     ArrowRight,
     Building,
@@ -46,12 +47,11 @@ export default function MarketingHome({ features }: Props) {
 
     return (
         <>
-            <Head title="Welcome">
-                <meta
-                    name="description"
-                    content={`${name} — the Laravel + Inertia + React SaaS boilerplate. Multi-tenant, multi-gateway billing, admin scope, and more.`}
-                />
-            </Head>
+            <SeoMeta
+                pageTitle="Welcome"
+                title={`${name} — ship your SaaS in days, not months`}
+                description={`${name} — the Laravel + Inertia + React SaaS boilerplate. Multi-tenant, multi-gateway billing, admin scope, and more.`}
+            />
 
             {/* Hero */}
             <section

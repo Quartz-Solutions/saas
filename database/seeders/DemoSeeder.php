@@ -32,6 +32,9 @@ class DemoSeeder extends Seeder
         // Guarantee users + Acme tenant + role assignments exist.
         $this->call(UserSeeder::class);
 
+        // Placeholder /docs content so the public docs index isn't empty.
+        $this->call(CmsPagesSeeder::class);
+
         /** @var TenantService $service */
         $service = app(TenantService::class);
 

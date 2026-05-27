@@ -1,4 +1,4 @@
-import { Head } from '@inertiajs/react';
+import SeoMeta from '@/components/marketing/seo-meta';
 
 type Props = {
     type: string;
@@ -9,12 +9,11 @@ type Props = {
 export default function PrivacyPage({ effectiveDate, companyName }: Props) {
     return (
         <>
-            <Head title="Privacy Policy">
-                <meta
-                    name="description"
-                    content={`${companyName} privacy policy — what we collect, how we use it, your rights.`}
-                />
-            </Head>
+            <SeoMeta
+                pageTitle="Privacy Policy"
+                title={`Privacy Policy — ${companyName}`}
+                description={`${companyName} privacy policy — what we collect, how we use it, your rights.`}
+            />
 
             <article
                 className="mx-auto w-full max-w-3xl px-4 py-12 md:px-6 md:py-16"

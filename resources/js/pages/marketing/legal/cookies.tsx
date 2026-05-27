@@ -1,4 +1,4 @@
-import { Head } from '@inertiajs/react';
+import SeoMeta from '@/components/marketing/seo-meta';
 
 type Props = {
     type: string;
@@ -9,12 +9,11 @@ type Props = {
 export default function CookiesPage({ effectiveDate, companyName }: Props) {
     return (
         <>
-            <Head title="Cookie Policy">
-                <meta
-                    name="description"
-                    content={`${companyName} cookie policy — what cookies we set and why.`}
-                />
-            </Head>
+            <SeoMeta
+                pageTitle="Cookie Policy"
+                title={`Cookie Policy — ${companyName}`}
+                description={`${companyName} cookie policy — what cookies we set and why.`}
+            />
 
             <article
                 className="mx-auto w-full max-w-3xl px-4 py-12 md:px-6 md:py-16"
