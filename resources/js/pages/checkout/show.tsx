@@ -42,6 +42,7 @@ type Session = {
 type Gateway = {
     id: string;
     name: string;
+    preferred?: boolean;
     meta: {
         description?: string;
         regions?: string[];
@@ -247,7 +248,14 @@ function GatewayTile({
             </div>
             <div className="flex-1">
                 <div className="flex items-center justify-between gap-3">
-                    <div className="font-medium">{gateway.name}</div>
+                    <div className="flex items-center gap-2">
+                        <span className="font-medium">{gateway.name}</span>
+                        {gateway.preferred ? (
+                            <Badge variant="default" className="text-[10px]">
+                                Preferred
+                            </Badge>
+                        ) : null}
+                    </div>
                     {gateway.meta.driver_status === 'planned' ? (
                         <Badge variant="outline" className="text-xs">
                             Beta

@@ -73,8 +73,8 @@ export function AppSidebar() {
                   icon: LayoutGrid,
               },
               {
-                  title: 'Users',
-                  href: tenantRoutes.users.index({ tenantSlug }),
+                  title: 'Members',
+                  href: tenantRoutes.members.index({ tenantSlug }),
                   icon: UsersRound,
               },
               {

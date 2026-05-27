@@ -145,6 +145,7 @@ class TenantsController extends Controller
                     : null,
                 'timezone' => $tenant->timezone,
                 'currency' => $tenant->currency,
+                'preferred_gateway' => $tenant->preferred_gateway,
                 'locale' => $tenant->locale,
                 'status' => $tenant->status,
                 'is_owner' => $isOwner,
@@ -155,6 +156,19 @@ class TenantsController extends Controller
                 ->orderBy('code')
                 ->get(['code', 'name', 'symbol'])
                 ->toArray(),
+            // Gateways the tenant can pick as their preferred default.
+            // Filtered by tenant currency so we don't show options that
+            // would fail at checkout.
+            'gateways' => collect(app(\App\Support\Billing\GatewayRegistry::class)->all())
+                ->filter(fn ($gw) => $gw instanceof \App\Support\Billing\Checkout\CheckoutGateway)
+                ->filter(fn ($gw) => in_array($tenant->currency, $gw->supportedCurrencies(), true))
+                ->map(fn ($gw) => [
+                    'id' => $gw->id(),
+                    'name' => $gw->displayName(),
+                    'regions' => (array) config("billing.gateways.{$gw->id()}.regions", []),
+                ])
+                ->values()
+                ->all(),
         ]);
     }
 
@@ -162,6 +176,14 @@ class TenantsController extends Controller
     {
         $tenant = $this->currentTenant();
         $attrs = $request->safe()->except(['logo']);
+
+        // The select uses '__none__' as the sentinel for "fall back to the
+        // global default" since shadcn SelectItem can't take an empty value.
+        if (array_key_exists('preferred_gateway', $attrs)
+            && ($attrs['preferred_gateway'] === '__none__' || $attrs['preferred_gateway'] === '')
+        ) {
+            $attrs['preferred_gateway'] = null;
+        }
 
         if ($request->hasFile('logo')) {
             $oldPath = $tenant->logo_path;

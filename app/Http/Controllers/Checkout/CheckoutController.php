@@ -286,17 +286,43 @@ class CheckoutController extends Controller
     }
 
     /**
+     * Gateways the user can pick for this session, in display order.
+     *
+     * Filters:
+     *   - implements CheckoutGateway
+     *   - declares support for the session currency
+     *   - supports subscriptions when the session intent is subscription
+     *
+     * Order: tenant's `preferred_gateway` first → global default → rest by
+     * display name. The first row is what the picker pre-selects.
+     *
      * @return array<int, array<string, mixed>>
      */
     protected function availableGateways(CheckoutSession $session): array
     {
+        $tenantPreferred = $session->tenant?->preferred_gateway;
+        $globalDefault = (string) config('billing.default_gateway', 'stripe');
+
+        $rank = static function (string $id) use ($tenantPreferred, $globalDefault): int {
+            if ($id === $tenantPreferred) {
+                return 0;
+            }
+            if ($id === $globalDefault) {
+                return 1;
+            }
+
+            return 2;
+        };
+
         return collect($this->registry->all())
             ->filter(fn ($gw) => $gw instanceof CheckoutGateway)
             ->filter(fn (CheckoutGateway $gw) => in_array($session->currency, $gw->supportedCurrencies(), true))
             ->filter(fn (CheckoutGateway $gw) => $session->intent !== CheckoutSession::INTENT_SUBSCRIPTION || $gw->supportsSubscriptions())
+            ->sortBy(fn (CheckoutGateway $gw) => $rank($gw->id()).':'.$gw->displayName())
             ->map(fn ($gw) => [
                 'id' => $gw->id(),
                 'name' => $gw->displayName(),
+                'preferred' => $tenantPreferred === $gw->id(),
                 'meta' => (array) config("billing.gateways.{$gw->id()}"),
             ])
             ->values()

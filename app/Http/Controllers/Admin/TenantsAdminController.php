@@ -209,6 +209,16 @@ class TenantsAdminController extends Controller
             }])
             ->get();
 
+        // Recent outbound webhook deliveries across all of this tenant's
+        // endpoints — surfaced as a mini-table so the admin can retry
+        // failures inline without leaving the tenant detail.
+        $outboundDeliveries = \App\Models\OutboundWebhookDelivery::query()
+            ->whereIn('outbound_webhook_id', $outboundWebhooks->pluck('id'))
+            ->with('webhook:id,url,description')
+            ->latest('id')
+            ->limit(self::SUMMARY_LIMIT)
+            ->get();
+
         $membersPaginator = $tenant->memberships()
             ->with('user:id,name,email,last_login_at,suspended_at,avatar_path')
             ->orderBy('joined_at', 'desc')
@@ -323,6 +333,18 @@ class TenantsAdminController extends Controller
                 'deliveries_total' => (int) $outboundWebhooks->sum('deliveries_count'),
                 'deliveries_failed' => (int) $outboundWebhooks->sum('failed_deliveries_count'),
             ],
+            'outboundDeliveries' => $outboundDeliveries->map(fn ($d) => [
+                'id' => $d->id,
+                'webhook_url' => $d->webhook?->url,
+                'event_type' => $d->event_type,
+                'status' => $d->status,
+                'attempt' => (int) $d->attempt,
+                'response_code' => $d->response_code,
+                'duration_ms' => $d->duration_ms,
+                'created_at' => $d->created_at?->toIso8601String(),
+                'failed_at' => $d->failed_at?->toIso8601String(),
+                'retryable' => in_array($d->status, ['failed', 'abandoned'], true),
+            ])->all(),
             'members' => [
                 'data' => collect($membersPaginator->items())->map(fn ($m) => [
                     'membership_id' => $m->id,
@@ -452,6 +474,49 @@ class TenantsAdminController extends Controller
         return response()->json($data, 200, [
             'Content-Disposition' => 'attachment; filename="tenant-'.$tenant->slug.'-export.json"',
         ]);
+    }
+
+    /**
+     * Re-queue a failed (or stuck) outbound webhook delivery from the
+     * tenant detail activity panel. Available to Super Admins.
+     */
+    public function retryWebhookDelivery(Request $request, Tenant $tenant, \App\Models\OutboundWebhookDelivery $delivery): RedirectResponse
+    {
+        // Authorise via the route group's Super Admin gate already; just
+        // sanity-check the delivery belongs to this tenant's webhooks.
+        $delivery->loadMissing('webhook');
+        if ($delivery->webhook?->tenant_id !== $tenant->id) {
+            abort(404);
+        }
+
+        $delivery->forceFill([
+            'status' => \App\Models\OutboundWebhookDelivery::STATUS_PENDING,
+            'failed_at' => null,
+            'next_retry_at' => null,
+        ])->save();
+
+        \App\Jobs\DeliverWebhookJob::dispatch($delivery->id);
+
+        AuditLog::create([
+            'tenant_id' => $tenant->id,
+            'user_id' => $request->user()->id,
+            'action' => 'admin.tenant.webhook_delivery_retried',
+            'auditable_type' => \App\Models\OutboundWebhookDelivery::class,
+            'auditable_id' => $delivery->id,
+            'new_values' => [
+                'webhook_id' => $delivery->outbound_webhook_id,
+                'event_type' => $delivery->event_type,
+            ],
+            'ip' => $request->ip(),
+            'user_agent' => substr((string) $request->userAgent(), 0, 512),
+        ]);
+
+        Inertia::flash('toast', [
+            'type' => 'success',
+            'message' => __('Delivery re-queued.'),
+        ]);
+
+        return back();
     }
 
     public function stopImpersonation(StopImpersonationRequest $request): RedirectResponse

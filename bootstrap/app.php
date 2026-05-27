@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Middleware\EnsureTenantMembership;
+use App\Http\Middleware\EnforcePasswordReset;
 use App\Http\Middleware\HandleAppearance;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\HandleRedirects;
@@ -40,6 +41,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->web(append: [
             HandleAppearance::class,
             HandleInertiaRequests::class,
+            EnforcePasswordReset::class,
             AddLinkHeadersForPreloadedAssets::class,
         ]);
 

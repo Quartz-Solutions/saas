@@ -21,6 +21,7 @@ use Spatie\Permission\Traits\HasRoles;
 #[Fillable([
     'name',
     'email',
+    'phone',
     'password',
     'avatar_path',
     'locale',
@@ -62,7 +63,36 @@ class User extends Authenticatable implements MustVerifyEmail
             'last_seen_at' => 'datetime',
             'suspended_at' => 'datetime',
             'force_password_reset' => 'boolean',
+            // PII encrypted at rest. The cast handles encrypt-on-set +
+            // decrypt-on-get transparently — `$user->phone = '...'` and
+            // reads work as normal in PHP, the DB column stores the
+            // ciphertext. Add more `'<col>' => 'encrypted'` lines below
+            // for any other PII column you add (note: the column type
+            // must be TEXT-sized because the ciphertext is much longer
+            // than the cleartext).
+            'phone' => 'encrypted',
         ];
+    }
+
+    /**
+     * Auto-clear the `force_password_reset` flag whenever the password is
+     * changed. Lets the EnforcePasswordReset middleware lift the lock-out
+     * the moment the user picks a new password — whether they did so via
+     * the email reset link or the in-app security settings.
+     */
+    protected static function booted(): void
+    {
+        static::saving(function (User $user): void {
+            // Only auto-clear on UPDATE. The "password is dirty on create"
+            // case would otherwise erase any flag a factory/seeder/admin
+            // action explicitly set on a brand-new user row.
+            if ($user->exists
+                && $user->isDirty('password')
+                && (bool) $user->force_password_reset
+            ) {
+                $user->force_password_reset = false;
+            }
+        });
     }
 
     public function currentTenant(): BelongsTo

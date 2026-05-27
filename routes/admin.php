@@ -78,6 +78,13 @@ Route::middleware(['auth', 'verified', 'admin.scope', 'role:Super Admin'])
             ->whereNumber('tenant')
             ->name('tenants.transfer-ownership');
 
+        // Retry a failed outbound webhook delivery from the tenant detail
+        // activity panel. The delivery must belong to one of this tenant's
+        // configured endpoints (enforced server-side).
+        Route::post('tenants/{tenant}/webhook-deliveries/{delivery}/retry', [TenantsAdminController::class, 'retryWebhookDelivery'])
+            ->whereNumber('tenant')->whereNumber('delivery')
+            ->name('tenants.webhook-deliveries.retry');
+
         // Users admin.
         Route::get('users', [UsersAdminController::class, 'index'])
             ->name('users.index');

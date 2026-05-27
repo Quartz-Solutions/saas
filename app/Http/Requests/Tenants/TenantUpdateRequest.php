@@ -40,6 +40,7 @@ class TenantUpdateRequest extends FormRequest
             'currency' => ['required', 'string', 'size:3'],
             'locale' => ['required', 'string', 'max:8'],
             'logo' => ['nullable', 'image', 'max:2048'],
+            'preferred_gateway' => ['nullable', 'string', 'max:64'],
         ];
     }
 

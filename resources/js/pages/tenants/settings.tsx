@@ -46,6 +46,7 @@ type Tenant = {
     logo_url: string | null;
     timezone: string;
     currency: string;
+    preferred_gateway: string | null;
     locale: string;
     status: string;
     is_owner: boolean;
@@ -59,13 +60,20 @@ type Invitation = {
     created_at: string | null;
 };
 
+type Gateway = {
+    id: string;
+    name: string;
+    regions: string[];
+};
+
 type Props = {
     tenant: Tenant;
     invitations: Invitation[];
+    gateways?: Gateway[];
     currencies: Currency[];
 };
 
-export default function TenantSettings({ tenant, currencies }: Props) {
+export default function TenantSettings({ tenant, currencies, gateways = [] }: Props) {
     const { currentTenant } = usePage<{
         currentTenant: { slug: string } | null;
     }>().props;
@@ -171,6 +179,42 @@ export default function TenantSettings({ tenant, currencies }: Props) {
                                         </Select>
                                         <InputError message={errors.currency} />
                                     </div>
+                                    {gateways.length > 0 && (
+                                        <div className="grid gap-2">
+                                            <Label htmlFor="t-pref-gateway">
+                                                Preferred payment gateway{' '}
+                                                <span className="text-muted-foreground">
+                                                    (optional)
+                                                </span>
+                                            </Label>
+                                            <Select
+                                                name="preferred_gateway"
+                                                defaultValue={tenant.preferred_gateway ?? '__none__'}
+                                            >
+                                                <SelectTrigger
+                                                    id="t-pref-gateway"
+                                                    className="w-full"
+                                                >
+                                                    <SelectValue />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    <SelectItem value="__none__">
+                                                        Use the global default
+                                                    </SelectItem>
+                                                    {gateways.map((g) => (
+                                                        <SelectItem key={g.id} value={g.id}>
+                                                            {g.name}
+                                                            {g.regions.length > 0 ? ' · '+g.regions.slice(0,2).join(', ') : ''}
+                                                        </SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </Select>
+                                            <p className="text-xs text-muted-foreground">
+                                                Pre-selected on the checkout picker. Only gateways that support your tenant currency are listed.
+                                            </p>
+                                            <InputError message={errors.preferred_gateway} />
+                                        </div>
+                                    )}
                                     <div className="grid gap-2">
                                         <Label htmlFor="t-logo">
                                             Logo{' '}

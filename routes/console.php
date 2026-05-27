@@ -1,6 +1,7 @@
 <?php
 
 use App\Jobs\ExpireStaleCheckouts;
+use App\Jobs\PurgeExpiredSoftDeletedTenants;
 use App\Jobs\SendCheckoutAbandonmentReminders;
 use App\Jobs\SendTrialEndingReminders;
 use Illuminate\Foundation\Inspiring;
@@ -62,6 +63,19 @@ Schedule::job(new SendTrialEndingReminders)
     ->dailyAt('09:00')
     ->onOneServer()
     ->name('trial-ending-reminders');
+
+/*
+|--------------------------------------------------------------------------
+| GDPR 30-day purge
+|--------------------------------------------------------------------------
+| Hard-deletes tenants that have been soft-deleted for >= 30 days.
+| Cascading FKs clean up memberships/subscriptions/invoices/payments.
+| Each purge writes one audit_logs row with a forensic snapshot.
+*/
+Schedule::job(new PurgeExpiredSoftDeletedTenants)
+    ->dailyAt('03:00')
+    ->onOneServer()
+    ->name('gdpr-tenant-purge');
 
 /*
 |--------------------------------------------------------------------------

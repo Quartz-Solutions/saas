@@ -106,7 +106,7 @@ class TenantService
                 }
             }
 
-            foreach (['logo_path', 'locale', 'timezone', 'currency', 'status', 'settings'] as $key) {
+            foreach (['logo_path', 'locale', 'timezone', 'currency', 'preferred_gateway', 'status', 'settings'] as $key) {
                 if (array_key_exists($key, $attributes)) {
                     $tenant->{$key} = $key === 'currency'
                         ? strtoupper((string) $attributes[$key])

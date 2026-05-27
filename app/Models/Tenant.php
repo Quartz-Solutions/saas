@@ -19,6 +19,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
     'locale',
     'timezone',
     'currency',
+    'preferred_gateway',
     'status',
     'settings',
     'trial_ends_at',

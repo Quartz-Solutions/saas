@@ -1,4 +1,4 @@
-import { Form, Head, Link } from '@inertiajs/react';
+import { Form, Head, Link, router } from '@inertiajs/react';
 import {
     AlertOctagon,
     AlertTriangle,
@@ -133,6 +133,19 @@ type AuditRow = {
     created_at: string | null;
 };
 
+type OutboundDeliveryRow = {
+    id: number;
+    webhook_url: string | null;
+    event_type: string;
+    status: string;
+    attempt: number;
+    response_code: number | null;
+    duration_ms: number | null;
+    created_at: string | null;
+    failed_at: string | null;
+    retryable: boolean;
+};
+
 type LoginRow = {
     id: number;
     user: { id: number; name: string; email: string } | null;
@@ -168,6 +181,7 @@ type Props = {
         deliveries_total: number;
         deliveries_failed: number;
     };
+    outboundDeliveries: OutboundDeliveryRow[];
     members: {
         data: MemberRow[];
         meta: { current_page: number; last_page: number; per_page: number; total: number };
@@ -237,6 +251,7 @@ export default function AdminTenantsShow({
     auditLog,
     loginHistory,
     outboundWebhooks,
+    outboundDeliveries,
     members,
 }: Props) {
     const [tab, setTab] = useState<string>(getTab());
@@ -449,6 +464,7 @@ return tenant.trial_ends_at ? `Trial ends ${formatDateTime(tenant.trial_ends_at)
                         auditLog={auditLog}
                         webhookEvents={webhookEvents}
                         loginHistory={loginHistory}
+                        outboundDeliveries={outboundDeliveries}
                     />
                 )}
 
@@ -1211,12 +1227,19 @@ function ActivityTab({
     auditLog,
     webhookEvents,
     loginHistory,
+    outboundDeliveries,
 }: {
     tenant: TenantProp;
     auditLog: AuditRow[];
     webhookEvents: WebhookRow[];
     loginHistory: LoginRow[];
+    outboundDeliveries: OutboundDeliveryRow[];
 }) {
+    const retryDelivery = (id: number) => {
+        router.post(`/admin/tenants/${tenant.id}/webhook-deliveries/${id}/retry`, {}, {
+            preserveScroll: true,
+        });
+    };
     return (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             <ActivityPanel
@@ -1284,6 +1307,61 @@ function ActivityTab({
                     { key: 'status', header: 'Status', render: (r) => <Badge variant={r.status === 'processed' ? 'default' : 'outline'}>{r.status}</Badge> },
                 ]}
                 emptyMessage="No events."
+            />
+
+            <ActivityPanel
+                title="Outbound deliveries"
+                description="Recent outbound webhook deliveries — failed rows can be re-queued."
+                rows={outboundDeliveries}
+                rowKey={(r) => r.id}
+                columns={[
+                    {
+                        key: 'date',
+                        header: 'Date',
+                        render: (r) => (
+                            <span className="font-mono text-xs">
+                                {r.created_at ? formatDateTime(r.created_at) : '—'}
+                            </span>
+                        ),
+                    },
+                    { key: 'event', header: 'Event', render: (r) => <span className="font-mono text-xs">{r.event_type}</span> },
+                    {
+                        key: 'status',
+                        header: 'Status',
+                        render: (r) => (
+                            <Badge
+                                variant={
+                                    r.status === 'succeeded'
+                                        ? 'default'
+                                        : r.status === 'failed' || r.status === 'abandoned'
+                                          ? 'destructive'
+                                          : 'outline'
+                                }
+                            >
+                                {r.status}
+                                {r.response_code ? ` · ${r.response_code}` : ''}
+                            </Badge>
+                        ),
+                    },
+                    {
+                        key: 'action',
+                        header: '',
+                        className: 'w-px text-right',
+                        render: (r) =>
+                            r.retryable ? (
+                                <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => retryDelivery(r.id)}
+                                    data-test={`retry-delivery-${r.id}`}
+                                >
+                                    <RotateCcw className="size-3.5" />
+                                    Retry
+                                </Button>
+                            ) : null,
+                    },
+                ]}
+                emptyMessage="No outbound deliveries."
             />
         </div>
     );
