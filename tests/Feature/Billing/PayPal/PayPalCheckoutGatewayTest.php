@@ -160,6 +160,88 @@ class PayPalCheckoutGatewayTest extends TestCase
         Http::assertSentCount(3);
     }
 
+    public function test_reconcile_on_return_completes_active_subscription_without_webhook(): void
+    {
+        $owner = User::factory()->create();
+        $tenant = app(TenantService::class)->create($owner, ['name' => 'Acme']);
+
+        $plan = Plan::factory()->create(['price_cents' => 2900, 'currency' => 'USD']);
+
+        $session = CheckoutSession::create([
+            'user_id' => $owner->id,
+            'tenant_id' => $tenant->id,
+            'plan_id' => $plan->id,
+            'intent' => CheckoutSession::INTENT_SUBSCRIPTION,
+            'status' => CheckoutSession::STATUS_AWAITING_PAYMENT,
+            'gateway' => 'paypal',
+            'gateway_session_id' => 'I-SUB-RECON',
+            'currency' => 'USD',
+            'amount_cents' => 2900,
+            'expires_at' => now()->addMinutes(30),
+            'result_kind' => CheckoutSession::KIND_REDIRECT,
+            'result_payload' => ['url' => 'https://example.test/x'],
+        ]);
+
+        Http::fake([
+            '*/v1/oauth2/token' => Http::response(['access_token' => 'tok', 'expires_in' => 3600], 200),
+            '*/v1/billing/subscriptions/I-SUB-RECON' => Http::response([
+                'id' => 'I-SUB-RECON',
+                'status' => 'ACTIVE',
+                'billing_info' => [
+                    'last_payment' => [
+                        'amount' => ['value' => '29.00', 'currency_code' => 'USD'],
+                    ],
+                ],
+            ], 200),
+        ]);
+
+        $reconciled = (new PayPalGateway)->reconcileOnReturn($session);
+
+        $this->assertTrue($reconciled);
+
+        $session->refresh();
+        $this->assertSame(CheckoutSession::STATUS_COMPLETED, $session->status);
+        $this->assertNotNull($session->subscription_id);
+
+        $this->assertDatabaseHas('invoices', [
+            'tenant_id' => $tenant->id,
+            'gateway' => 'paypal',
+        ]);
+    }
+
+    public function test_reconcile_on_return_no_ops_when_paypal_still_pending(): void
+    {
+        $owner = User::factory()->create();
+        $tenant = app(TenantService::class)->create($owner, ['name' => 'Acme']);
+        $plan = Plan::factory()->create(['price_cents' => 2900, 'currency' => 'USD']);
+
+        $session = CheckoutSession::create([
+            'user_id' => $owner->id,
+            'tenant_id' => $tenant->id,
+            'plan_id' => $plan->id,
+            'intent' => CheckoutSession::INTENT_SUBSCRIPTION,
+            'status' => CheckoutSession::STATUS_AWAITING_PAYMENT,
+            'gateway' => 'paypal',
+            'gateway_session_id' => 'I-SUB-PENDING',
+            'currency' => 'USD',
+            'amount_cents' => 2900,
+            'expires_at' => now()->addMinutes(30),
+        ]);
+
+        Http::fake([
+            '*/v1/oauth2/token' => Http::response(['access_token' => 'tok', 'expires_in' => 3600], 200),
+            '*/v1/billing/subscriptions/I-SUB-PENDING' => Http::response([
+                'id' => 'I-SUB-PENDING',
+                'status' => 'APPROVAL_PENDING',
+            ], 200),
+        ]);
+
+        $reconciled = (new PayPalGateway)->reconcileOnReturn($session);
+
+        $this->assertFalse($reconciled);
+        $this->assertSame(CheckoutSession::STATUS_AWAITING_PAYMENT, $session->fresh()->status);
+    }
+
     public function test_handle_webhook_completes_checkout_on_order_approved(): void
     {
         $owner = User::factory()->create();

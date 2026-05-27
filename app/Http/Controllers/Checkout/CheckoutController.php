@@ -11,6 +11,7 @@ use App\Models\Tenant;
 use App\Support\Billing\Checkout\CheckoutService;
 use App\Support\Billing\CheckoutGateway;
 use App\Support\Billing\GatewayRegistry;
+use App\Support\Billing\PayPal\PayPalGateway;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -185,6 +186,20 @@ class CheckoutController extends Controller
     {
         $session = $this->loadSession($session);
 
+        // Webhook-less fallback: some gateways (PayPal in particular) don't
+        // reliably fire a webhook to a localhost dev install, and a real
+        // production install can still miss a delivery. If the driver can
+        // verify completion synchronously when the customer returns, ask
+        // it to. The driver short-circuits if the gateway-side state isn't
+        // actually approved/completed, so it's safe to call on every visit.
+        if ($session->status === CheckoutSession::STATUS_AWAITING_PAYMENT) {
+            $gateway = filled($session->gateway) ? $this->registry->find($session->gateway) : null;
+            if ($gateway instanceof PayPalGateway) {
+                $gateway->reconcileOnReturn($session);
+                $session = $session->fresh();
+            }
+        }
+
         if ($session->status === CheckoutSession::STATUS_COMPLETED) {
             Inertia::flash('toast', [
                 'type' => 'success',
@@ -204,6 +219,17 @@ class CheckoutController extends Controller
     public function status(string $session): JsonResponse
     {
         $session = $this->loadSession($session);
+
+        // Same fallback as return(): if the gateway can verify itself,
+        // give it a chance to reconcile before we report status to the
+        // polling client.
+        if ($session->status === CheckoutSession::STATUS_AWAITING_PAYMENT) {
+            $gateway = filled($session->gateway) ? $this->registry->find($session->gateway) : null;
+            if ($gateway instanceof PayPalGateway) {
+                $gateway->reconcileOnReturn($session);
+                $session = $session->fresh();
+            }
+        }
 
         return response()->json([
             'status' => $session->status,

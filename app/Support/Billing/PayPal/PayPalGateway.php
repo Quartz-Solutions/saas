@@ -109,12 +109,21 @@ class PayPalGateway implements CheckoutGateway, PaymentGateway, SubscriptionGate
             // Fall through and create a fresh resource if refetch failed.
         }
 
+        $returnUrl = route('checkout.return', ['session' => $session->public_id]);
+        $cancelUrl = route('checkout.show', ['session' => $session->public_id]).'?canceled=1';
+
         if ($isSubscription) {
             $paypalPlanId = $this->syncPlanForPayPal($plan);
 
             $payload = [
                 'plan_id' => $paypalPlanId,
                 'custom_id' => $session->public_id,
+                'application_context' => [
+                    'brand_name' => (string) config('app.name', 'App'),
+                    'user_action' => 'SUBSCRIBE_NOW',
+                    'return_url' => $returnUrl,
+                    'cancel_url' => $cancelUrl,
+                ],
             ];
             $response = Http::withToken($this->accessToken())
                 ->acceptJson()
@@ -136,6 +145,12 @@ class PayPalGateway implements CheckoutGateway, PaymentGateway, SubscriptionGate
                         'value' => $this->formatAmount((int) $session->amount_cents),
                     ],
                 ]],
+                'application_context' => [
+                    'brand_name' => (string) config('app.name', 'App'),
+                    'user_action' => 'PAY_NOW',
+                    'return_url' => $returnUrl,
+                    'cancel_url' => $cancelUrl,
+                ],
             ];
             $response = Http::withToken($this->accessToken())
                 ->acceptJson()
@@ -324,6 +339,117 @@ class PayPalGateway implements CheckoutGateway, PaymentGateway, SubscriptionGate
             (int) $plan->trial_days,
             $plan->name,
         ]));
+    }
+
+    /**
+     * Fallback reconciliation invoked from CheckoutController::return when
+     * the customer is back from PayPal but our webhook hasn't fired (or
+     * never will — e.g. local dev with no public webhook URL configured).
+     *
+     * Asks PayPal for the order/subscription's current state and, if it
+     * shows APPROVED/ACTIVE/COMPLETED, drives CheckoutService::complete so
+     * the local Subscription + Invoice + Payment rows get created and the
+     * session flips to completed.
+     *
+     * Returns true if the session was just reconciled (caller should
+     * redirect to the dashboard); false if PayPal still considers the
+     * payment incomplete (caller should keep polling).
+     */
+    public function reconcileOnReturn(CheckoutSession $session): bool
+    {
+        if ($session->status === CheckoutSession::STATUS_COMPLETED) {
+            return true;
+        }
+        if ($session->gateway !== 'paypal' || ! filled($session->gateway_session_id)) {
+            return false;
+        }
+
+        $isSubscription = $session->intent === CheckoutSession::INTENT_SUBSCRIPTION;
+        $resource = $this->fetchExistingResource((string) $session->gateway_session_id, $isSubscription);
+        if ($resource === null) {
+            return false;
+        }
+
+        $status = strtoupper((string) ($resource['status'] ?? ''));
+        $reconcilableStates = $isSubscription
+            ? ['ACTIVE', 'APPROVED']
+            : ['COMPLETED', 'APPROVED'];
+        if (! in_array($status, $reconcilableStates, true)) {
+            return false;
+        }
+
+        // For one-time orders that landed in APPROVED (user clicked "Approve"
+        // but capture didn't fire automatically) we capture now so the funds
+        // actually move and we have a payment id to record.
+        $captureId = null;
+        if (! $isSubscription && $status === 'APPROVED') {
+            $capture = $this->captureOrder((string) $session->gateway_session_id);
+            if ($capture === null) {
+                return false;
+            }
+            $resource = $capture;
+            $captureId = (string) ($capture['purchase_units'][0]['payments']['captures'][0]['id'] ?? '');
+        }
+
+        $amountValue = (float) (
+            $resource['amount']['value']
+            ?? $resource['purchase_units'][0]['amount']['value']
+            ?? $resource['purchase_units'][0]['payments']['captures'][0]['amount']['value']
+            ?? $resource['billing_info']['last_payment']['amount']['value']
+            ?? 0
+        );
+        $amountCents = (int) round($amountValue * 100);
+        $currency = strtoupper((string) (
+            $resource['amount']['currency_code']
+            ?? $resource['purchase_units'][0]['amount']['currency_code']
+            ?? $resource['billing_info']['last_payment']['amount']['currency_code']
+            ?? $session->currency
+        ));
+
+        app(CheckoutService::class)->complete($session, [
+            'gateway_subscription_id' => $isSubscription ? (string) $session->gateway_session_id : null,
+            'gateway_invoice_id' => null,
+            'gateway_payment_id' => $isSubscription
+                ? null
+                : ($captureId !== '' ? $captureId : (string) $session->gateway_session_id),
+            'amount_paid_cents' => $amountCents > 0 ? $amountCents : (int) $session->amount_cents,
+            'paid_amount_cents' => $amountCents > 0 ? $amountCents : (int) $session->amount_cents,
+            'currency' => $currency,
+        ]);
+
+        return true;
+    }
+
+    /**
+     * Capture a PayPal order that's in APPROVED state. Used on-return when
+     * the customer approved but no webhook drove the capture.
+     *
+     * @return array<string, mixed>|null Capture response, or null on failure.
+     */
+    protected function captureOrder(string $orderId): ?array
+    {
+        try {
+            $response = Http::withToken($this->accessToken())
+                ->acceptJson()
+                ->asJson()
+                ->post($this->baseUrl().'/v2/checkout/orders/'.$orderId.'/capture', new \stdClass);
+
+            if (! $response->successful()) {
+                Log::warning('PayPal capture-order failed on return', [
+                    'order_id' => $orderId,
+                    'status' => $response->status(),
+                    'body' => $response->body(),
+                ]);
+
+                return null;
+            }
+
+            return (array) $response->json();
+        } catch (Throwable $e) {
+            report($e);
+
+            return null;
+        }
     }
 
     /**
