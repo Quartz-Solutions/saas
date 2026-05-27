@@ -32,9 +32,11 @@ class AppSettingsService
      *   - payment gateways from config('billing.gateways.*') — each gateway
      *     becomes a group keyed `gateway_{id}`
      *
-     * The boot-time Config::set hydration walks this merged catalog, so
-     * gateway field overrides flow into `billing.gateways.{id}.*` exactly
-     * like app-settings overrides flow into their own paths.
+     * Both are needed by `applyOverrides()` (so saved gateway secrets flow
+     * back into the runtime config) and by `GatewaysController` (which
+     * resolves field shapes via group('gateway_*')). The /admin/settings
+     * page filters gateway groups out at presentation time — see
+     * presentForAdmin().
      *
      * @return array<string, array<string, mixed>>
      */
@@ -48,9 +50,7 @@ class AppSettingsService
 
     /**
      * Gateway catalog reshaped to match the app-settings group shape so the
-     * rest of this service can treat them uniformly. Gateways without any
-     * field declarations yet (driver_status=planned, awaiting per-gateway
-     * agent work) are skipped — they have nothing to render or persist.
+     * rest of this service can treat them uniformly.
      *
      * @return array<string, array<string, mixed>>
      */
@@ -116,6 +116,13 @@ class AppSettingsService
         $groups = [];
 
         foreach ($this->catalog() as $groupKey => $group) {
+            // Payment gateways have their own dedicated page at /admin/gateways
+            // — don't surface them here. They still live in catalog() so
+            // GatewaysController and applyOverrides() can resolve them.
+            if (str_starts_with($groupKey, 'gateway_')) {
+                continue;
+            }
+
             $fields = [];
             foreach ($group['fields'] as $fieldKey => $field) {
                 $isSecret = ($field['type'] ?? 'string') === 'secret';
