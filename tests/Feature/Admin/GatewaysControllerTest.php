@@ -48,7 +48,7 @@ class GatewaysControllerTest extends TestCase
             );
     }
 
-    public function test_index_marks_stripe_as_shipped_others_as_planned(): void
+    public function test_index_marks_all_catalog_gateways_as_shipped(): void
     {
         $admin = $this->makeSuperAdmin();
 
@@ -58,13 +58,10 @@ class GatewaysControllerTest extends TestCase
             ->assertInertia(function ($page) {
                 $page->component('admin/gateways/index');
 
-                $stripe = collect($page->toArray()['props']['gateways'])
-                    ->firstWhere('id', 'stripe');
-                $this->assertSame('shipped', $stripe['driver_status']);
-
-                $paypal = collect($page->toArray()['props']['gateways'])
-                    ->firstWhere('id', 'paypal');
-                $this->assertSame('planned', $paypal['driver_status']);
+                $gateways = collect($page->toArray()['props']['gateways']);
+                foreach ($gateways as $g) {
+                    $this->assertSame('shipped', $g['driver_status'], "Gateway [{$g['id']}] should be shipped after Phase 4.");
+                }
 
                 return $page;
             });
@@ -86,18 +83,17 @@ class GatewaysControllerTest extends TestCase
             );
     }
 
-    public function test_edit_renders_planned_gateway_with_field_catalog(): void
+    public function test_edit_renders_non_stripe_gateway_with_field_catalog(): void
     {
         $admin = $this->makeSuperAdmin();
 
-        // PayPal is planned but has field declarations so admins can pre-save credentials.
         $this->actingAs($admin)
             ->get('/admin/gateways/paypal')
             ->assertOk()
             ->assertInertia(fn ($page) => $page
                 ->component('admin/gateways/edit')
                 ->where('gateway.id', 'paypal')
-                ->where('gateway.driver_status', 'planned')
+                ->where('gateway.driver_status', 'shipped')
                 ->has('fields.PAYPAL_CLIENT_ID')
                 ->where('fields.PAYPAL_CLIENT_SECRET.is_secret', true)
             );
@@ -171,9 +167,11 @@ class GatewaysControllerTest extends TestCase
     {
         $admin = $this->makeSuperAdmin();
 
-        // Hand-craft a planned-gateway field set in config so the test isn't
-        // coupled to which gateways have fields at any given moment.
+        // Force-flag PayPal as planned so we can exercise the "planned ⇒
+        // server-strips enabled flag" branch independent of which gateways
+        // happen to be shipped at any given moment.
         config([
+            'billing.gateways.paypal.driver_status' => 'planned',
             'billing.gateways.paypal.fields' => [
                 'PAYPAL_ENABLED' => [
                     'config_path' => 'billing.gateways.paypal.enabled',

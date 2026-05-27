@@ -151,7 +151,7 @@ return [
             'description' => 'Subscriptions API + Orders v2 for one-off; ~200 markets, 24 currencies. RSA-SHA256 webhook signatures.',
             'regions' => ['Global (~200 markets)'],
             'capabilities' => ['subscriptions', 'one_time', 'refunds', 'tokenization'],
-            'driver_status' => 'planned',
+            'driver_status' => 'shipped',
             'documentation_url' => 'https://developer.paypal.com/docs/api/subscriptions/v1/',
 
             'enabled' => env('PAYPAL_ENABLED', false),
@@ -174,7 +174,7 @@ return [
             'description' => 'Cards, Vodafone Cash, Aman/Masary kiosk, BNPL across EG/AE/SA/OM/PK. HMAC-SHA512 on callback `hmac` query param.',
             'regions' => ['Egypt', 'UAE', 'Saudi Arabia', 'Oman', 'Pakistan'],
             'capabilities' => ['one_time', 'refunds', 'tokenization'],
-            'driver_status' => 'planned',
+            'driver_status' => 'shipped',
             'documentation_url' => 'https://developers.paymob.com/paymob-docs/getting-started/overview',
 
             'enabled' => env('PAYMOB_ENABLED', false),
@@ -205,7 +205,7 @@ return [
             'description' => 'Egypt. Kiosk reference codes + Express Checkout. SHA-256 signed requests; settles via 200k+ Fawry outlets.',
             'regions' => ['Egypt'],
             'capabilities' => ['subscriptions', 'one_time', 'refunds', 'tokenization'],
-            'driver_status' => 'planned',
+            'driver_status' => 'shipped',
             'documentation_url' => 'https://developer.fawrystaging.com/docs-home',
 
             'enabled' => env('FAWRY_ENABLED', false),
@@ -226,7 +226,7 @@ return [
             'description' => 'Hosted PayPage + Managed Form. STC Pay (KSA), Mada, Apple/Samsung Pay. Region-specific base URLs.',
             'regions' => ['Saudi Arabia', 'UAE', 'Egypt', 'Oman', 'Jordan', 'Kuwait', 'Iraq', 'Qatar', 'Morocco', 'Global (UK)'],
             'capabilities' => ['subscriptions', 'one_time', 'refunds', 'tokenization'],
-            'driver_status' => 'planned',
+            'driver_status' => 'shipped',
             'documentation_url' => 'https://docs.paytabs.com/manuals/Find-Your-Fit-Start-Building/',
 
             'enabled' => env('PAYTABS_ENABLED', false),
@@ -249,7 +249,7 @@ return [
             'description' => 'Checkout/HPP + Direct API. Apple Pay, Mada, BNPL (ValU/Tabby/Tamara). Basic auth; signature uses API password as HMAC key.',
             'regions' => ['Egypt', 'Saudi Arabia', 'UAE'],
             'capabilities' => ['subscriptions', 'one_time', 'refunds', 'tokenization'],
-            'driver_status' => 'planned',
+            'driver_status' => 'shipped',
             'documentation_url' => 'https://docs.geidea.net/docs/overview',
 
             'enabled' => env('GEIDEA_ENABLED', false),
@@ -270,7 +270,7 @@ return [
             'description' => 'Payfort. Hosted redirect; Mada, Meeza, KNET, valU, Apple Pay. Recurring via stored token. Per-request signature with phrase + sorted concat.',
             'regions' => ['Saudi Arabia', 'UAE', 'Egypt', 'Jordan', 'Lebanon', 'Qatar', 'Kuwait', 'Oman', 'Bahrain'],
             'capabilities' => ['subscriptions', 'one_time', 'refunds', 'tokenization'],
-            'driver_status' => 'planned',
+            'driver_status' => 'shipped',
             'documentation_url' => 'https://paymentservices.amazon.com/docs/getting-started',
 
             'enabled' => env('APS_ENABLED', false),
@@ -297,7 +297,7 @@ return [
             'description' => 'Hosted Pages + REST API. Mada, Apple/Google/Samsung Pay, Tabby BNPL. IPN uses plain-SHA1 `*_check` hashes.',
             'regions' => ['UAE', 'Saudi Arabia', 'Jordan', 'Bahrain'],
             'capabilities' => ['subscriptions', 'one_time', 'refunds', 'tokenization'],
-            'driver_status' => 'planned',
+            'driver_status' => 'shipped',
             'documentation_url' => 'https://docs.telr.com/reference/introduction',
 
             'enabled' => env('TELR_ENABLED', false),
@@ -320,7 +320,7 @@ return [
             'description' => 'OPPWA-backed. COPYandPAY widget + server-to-server. Webhook body is AES-256-GCM encrypted.',
             'regions' => ['Saudi Arabia', 'UAE', 'Jordan', 'Egypt'],
             'capabilities' => ['subscriptions', 'one_time', 'refunds', 'tokenization'],
-            'driver_status' => 'planned',
+            'driver_status' => 'shipped',
             'documentation_url' => 'https://hyperpay.docs.oppwa.com/',
 
             'enabled' => env('HYPERPAY_ENABLED', false),
@@ -347,7 +347,7 @@ return [
             'description' => 'KNET (KW), Benefit (BH), Mada (SA), STC Pay, Apple/Google/Samsung Pay across 8 markets. V2 native subscriptions.',
             'regions' => ['Kuwait', 'Saudi Arabia', 'UAE', 'Bahrain', 'Oman', 'Qatar', 'Jordan', 'Egypt'],
             'capabilities' => ['subscriptions', 'one_time', 'refunds', 'tokenization'],
-            'driver_status' => 'planned',
+            'driver_status' => 'shipped',
             'documentation_url' => 'https://docs.myfatoorah.com/docs/get-started',
 
             'enabled' => env('MYFATOORAH_ENABLED', false),
@@ -370,7 +370,7 @@ return [
             'description' => 'FPX, DuitNow, GrabPay/Boost/TouchNGo (MY); PayNow, Atome (SG). Native Recurring Billing. Modern webhook = HMAC-SHA256 of raw JSON.',
             'regions' => ['Singapore', 'Malaysia', 'Australia', 'Hong Kong', 'Philippines'],
             'capabilities' => ['subscriptions', 'one_time', 'refunds', 'tokenization'],
-            'driver_status' => 'planned',
+            'driver_status' => 'shipped',
             'documentation_url' => 'https://docs.hitpayapp.com/introduction',
 
             'enabled' => env('HITPAY_ENABLED', false),
@@ -393,7 +393,7 @@ return [
             'description' => 'Malaysia FPX (online banking) + cards. MYR only. Recurring is N-bills (not native subs). Callback HMAC-SHA512, redirect HMAC-SHA256.',
             'regions' => ['Malaysia'],
             'capabilities' => ['one_time', 'tokenization'],
-            'driver_status' => 'planned',
+            'driver_status' => 'shipped',
             'documentation_url' => 'https://www.billplz.com/api#introduction',
 
             'enabled' => env('BILLPLZ_ENABLED', false),
@@ -416,7 +416,7 @@ return [
             'description' => 'FPX (MY), QRIS (ID), OVO/DANA/LinkAja (ID), cards, e-wallets. HMAC-SHA512 mandated since 2025-01-31.',
             'regions' => ['Malaysia', 'Singapore', 'Indonesia', 'Philippines', 'Thailand', 'Vietnam'],
             'capabilities' => ['one_time', 'refunds', 'tokenization'],
-            'driver_status' => 'planned',
+            'driver_status' => 'shipped',
             'documentation_url' => 'https://www.ipay88.com/developer/',
 
             'enabled' => env('IPAY88_ENABLED', false),

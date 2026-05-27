@@ -90,9 +90,10 @@ class AppServiceProvider extends ServiceProvider
                 ));
             }
 
-            // Planned drivers (Phase 3.1-3.4) — scaffolds with real signature/auth
-            // logic but stub transaction methods. Registered when explicitly enabled
-            // so admin can iterate webhook verification without going live.
+            // Non-Stripe drivers — full CheckoutGateway + PaymentGateway impls
+            // shipped in Phase 4. Registered only when explicitly enabled in
+            // config; sandbox verification still pending for the open issues
+            // listed in agent-os/product/checkout.md §15.
             $plannedDrivers = [
                 'paypal' => PayPalGateway::class,
                 'paymob' => PaymobGateway::class,
