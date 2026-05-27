@@ -1,22 +1,59 @@
 import { Link, usePage } from '@inertiajs/react';
-import SeoMeta from '@/components/marketing/seo-meta';
 import {
     ArrowRight,
+    ArrowRightLeft,
+    Bell,
+    BookOpen,
+    Box,
+    Bug,
     Building,
+    ClipboardList,
     Code,
     CreditCard,
+    Database,
+    DollarSign,
+    Download,
+    Flag,
+    Gauge,
+    Globe,
+    HelpCircle,
+    History,
+    Image as ImageIcon,
+    Inbox,
+    KeyRound,
+    LayoutGrid,
     Lock,
     Mail,
-    Shield
-    
+    MailPlus,
+    Monitor,
+    MonitorSmartphone,
+    Moon,
+    RefreshCcw,
+    Repeat,
+    Search,
+    Settings2,
+    Shield,
+    ShieldCheck,
+    Siren,
+    SlidersHorizontal,
+    Sparkles,
+    Star,
+    Tag,
+    UserCog,
+    Users,
+    Wand2,
+    Webhook,
+    Wrench,
+    Zap,
 } from 'lucide-react';
-import type {LucideIcon} from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
+import { show as getStarted } from '@/actions/App/Http/Controllers/Onboarding/GetStartedController';
+import SeoMeta from '@/components/marketing/seo-meta';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import { login } from '@/routes';
 import marketingRoutes from '@/routes/marketing';
-import { show as getStarted } from '@/actions/App/Http/Controllers/Onboarding/GetStartedController';
 
 type Feature = {
     title: string;
@@ -34,12 +71,59 @@ type SharedProps = {
 };
 
 const iconMap: Record<string, LucideIcon> = {
+    // Foundation
     building: Building,
     'credit-card': CreditCard,
     shield: Shield,
     code: Code,
     mail: Mail,
     lock: Lock,
+    // Content & marketing CMS
+    'layout-grid': LayoutGrid,
+    image: ImageIcon,
+    'settings-2': Settings2,
+    'book-open': BookOpen,
+    'mail-plus': MailPlus,
+    inbox: Inbox,
+    'arrow-right-left': ArrowRightLeft,
+    search: Search,
+    globe: Globe,
+    history: History,
+    monitor: Monitor,
+    gauge: Gauge,
+    // Auth & identity
+    users: Users,
+    sparkles: Sparkles,
+    'shield-check': ShieldCheck,
+    'monitor-smartphone': MonitorSmartphone,
+    siren: Siren,
+    // API & integrations
+    'key-round': KeyRound,
+    webhook: Webhook,
+    flag: Flag,
+    // Operations
+    'user-cog': UserCog,
+    'clipboard-list': ClipboardList,
+    repeat: Repeat,
+    'sliders-horizontal': SlidersHorizontal,
+    // Billing extras
+    'refresh-ccw': RefreshCcw,
+    'dollar-sign': DollarSign,
+    tag: Tag,
+    // Compliance & ops
+    download: Download,
+    database: Database,
+    bug: Bug,
+    // DX & polish
+    moon: Moon,
+    'wand-2': Wand2,
+    // Back-compat / future
+    zap: Zap,
+    bell: Bell,
+    wrench: Wrench,
+    star: Star,
+    'help-circle': HelpCircle,
+    box: Box,
 };
 
 export default function MarketingHome({ features }: Props) {

@@ -1,5 +1,6 @@
 import { Form, Head, Link } from '@inertiajs/react';
 import { ArrowLeft, RotateCw } from 'lucide-react';
+import WebhookEventsController from '@/actions/App/Http/Controllers/Admin/WebhookEventsController';
 import Heading from '@/components/heading';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -11,7 +12,6 @@ import {
 } from '@/components/ui/card';
 import { Spinner } from '@/components/ui/spinner';
 import { formatDateTime } from '@/lib/utils';
-import WebhookEventsController from '@/actions/App/Http/Controllers/Admin/WebhookEventsController';
 import { index as webhooksIndex } from '@/routes/admin/webhooks';
 
 type Event = {

@@ -3,11 +3,12 @@ import { MoreHorizontal, ShieldCheck, UserPlus } from 'lucide-react';
 import { useState } from 'react';
 import UsersController from '@/actions/App/Http/Controllers/Users/UsersController';
 import {
-    DataTable,
-    type DataTableColumn,
-    type DataTableFilter,
-    type PaginationData,
+    DataTable
+    
+    
+    
 } from '@/components/data-table/data-table';
+import type {DataTableColumn, DataTableFilter, PaginationData} from '@/components/data-table/data-table';
 import Heading from '@/components/heading';
 import InputError from '@/components/input-error';
 import PasswordInput from '@/components/password-input';
@@ -80,13 +81,23 @@ export default function UsersIndex({ users, tableState }: Props) {
         page?: number;
     }) => {
         const data: Record<string, string | number | Record<string, string>> = {};
-        if (params.search !== undefined && params.search !== '') data.search = params.search;
-        if (params.filters && Object.keys(params.filters).length > 0) data.filter = params.filters;
+
+        if (params.search !== undefined && params.search !== '') {
+data.search = params.search;
+}
+
+        if (params.filters && Object.keys(params.filters).length > 0) {
+data.filter = params.filters;
+}
+
         if (params.sort) {
             data.sort = params.sort.column;
             data.direction = params.sort.direction;
         }
-        if (params.page && params.page > 1) data.page = params.page;
+
+        if (params.page && params.page > 1) {
+data.page = params.page;
+}
 
         router.get(tenantRoutes.users.index({ tenantSlug }).url, data, {
             preserveState: true,
@@ -539,6 +550,7 @@ UsersIndex.layout = ({
     currentTenant: { slug: string; name: string } | null;
 }) => {
     const slug = currentTenant?.slug ?? '';
+
     return {
         breadcrumbs: [
             {

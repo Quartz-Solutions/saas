@@ -1,6 +1,7 @@
 import { Form, Head, Link, router } from '@inertiajs/react';
 import { Flag, MoreHorizontal } from 'lucide-react';
 import { useState } from 'react';
+import FeatureFlagsController from '@/actions/App/Http/Controllers/Admin/FeatureFlagsController';
 import {
     DataTable
     
@@ -41,7 +42,6 @@ import { Spinner } from '@/components/ui/spinner';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { formatDateTime } from '@/lib/utils';
-import FeatureFlagsController from '@/actions/App/Http/Controllers/Admin/FeatureFlagsController';
 import { index as featureFlagsIndex, show as featureFlagShow } from '@/routes/admin/feature-flags';
 
 type FlagRow = {

@@ -7,12 +7,22 @@ use App\Models\Plan;
 use Illuminate\Database\Seeder;
 
 /**
- * Seeds the default Free/Pro/Enterprise plans from config/billing.php into
- * the `plans` table for fresh installs. After this runs, the DB is the
- * source-of-truth; admin manages plans through /admin/plans, and the
- * config block becomes a one-time seed reference.
+ * Seeds the default Free / Pro / Enterprise plan catalog from
+ * config/billing.php into the `plans` table.
  *
- * Idempotent — uses firstOrCreate against slug.
+ * Three-tier shape:
+ *   - free          $0/mo   — basic permissions (community support, basic
+ *                             analytics, 1 project, 3 seats, 1 GB).
+ *   - pro           $20/mo  — advanced analytics, API access, webhooks,
+ *                             priority support, 20 seats, 100 GB, unlimited
+ *                             projects.
+ *   - enterprise    $100/mo — full feature set: SSO/SAML, audit log export,
+ *                             dedicated account manager, custom SLA, +
+ *                             unlimited everything.
+ *
+ * Uses updateOrCreate so re-running the seeder syncs price + feature
+ * changes back into existing plan rows. Admins can still override per-plan
+ * via /admin/plans afterwards.
  */
 class PlansSeeder extends Seeder
 {
@@ -37,7 +47,7 @@ class PlansSeeder extends Seeder
                 default => 100,
             };
 
-            Plan::firstOrCreate(
+            Plan::updateOrCreate(
                 ['slug' => $slug],
                 [
                     'name' => $cfg['name'] ?? ucfirst($slug),
@@ -56,6 +66,6 @@ class PlansSeeder extends Seeder
             );
         }
 
-        $this->command?->info('PlansSeeder: '.count($plans).' default plans ready in the plans table.');
+        $this->command?->info('PlansSeeder: '.count($plans).' default plans synced into the plans table.');
     }
 }

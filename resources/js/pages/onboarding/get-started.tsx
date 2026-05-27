@@ -208,6 +208,7 @@ export default function GetStarted({ plans, selectedPlanSlug }: Props) {
                             <CardContent className="space-y-3">
                                 {plans.map((p) => {
                                     const active = selectedPlan === p.slug;
+
                                     return (
                                         <button
                                             type="button"

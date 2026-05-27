@@ -43,6 +43,7 @@ export default function CheckoutNextStep({ session }: Props) {
     if (session.result_kind === 'form_post') {
         const action = (payload.action as string | undefined) ?? '';
         const params = (payload.params as Record<string, string | number> | undefined) ?? {};
+
         return (
             <form
                 method={(payload.method as string | undefined) ?? 'POST'}
@@ -60,6 +61,7 @@ export default function CheckoutNextStep({ session }: Props) {
     if (session.result_kind === 'iframe') {
         const src = (payload.iframe_url as string | undefined) ?? '';
         const attrs = (payload.iframe_attributes as Record<string, string> | undefined) ?? {};
+
         return (
             <div className="mx-auto max-w-2xl px-4 py-6">
                 <iframe
@@ -85,10 +87,12 @@ export default function CheckoutNextStep({ session }: Props) {
             tag.src = scriptUrl;
             tag.async = true;
             document.body.appendChild(tag);
+
             return () => {
                 tag.remove();
             };
         }, [scriptUrl]);
+
         return (
             <div className="mx-auto max-w-md px-4 py-6">
                 <form
@@ -103,6 +107,7 @@ export default function CheckoutNextStep({ session }: Props) {
     if (session.result_kind === 'kiosk_ref') {
         const reference = (payload.reference as string | undefined) ?? '';
         const instructionsUrl = payload.instructions_url as string | undefined;
+
         return (
             <div className="mx-auto max-w-md px-4 py-6">
                 <Card>

@@ -1,6 +1,7 @@
 import { Head, Link, router } from '@inertiajs/react';
 import { Archive, MoreHorizontal, Plus, RotateCcw } from 'lucide-react';
 import { useState } from 'react';
+import PlansController from '@/actions/App/Http/Controllers/Admin/PlansController';
 import {
     DataTable,
 } from '@/components/data-table/data-table';
@@ -29,7 +30,6 @@ import {
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { formatDateTime } from '@/lib/utils';
-import PlansController from '@/actions/App/Http/Controllers/Admin/PlansController';
 import {
     create as plansCreate,
     edit as plansEdit,
@@ -77,7 +77,10 @@ const formatMoney = (cents: number, currency: string) => {
 };
 
 const formatCadence = (period: string, interval: number) => {
-    if (period === 'one_time') return 'one-time';
+    if (period === 'one_time') {
+return 'one-time';
+}
+
     return interval === 1 ? `/${period}` : `/${interval} ${period}s`;
 };
 
@@ -91,13 +94,23 @@ export default function PlansIndex({ plans, tableState }: Props) {
         page?: number;
     }) => {
         const data: Record<string, string | number | Record<string, string>> = {};
-        if (params.search !== undefined && params.search !== '') data.search = params.search;
-        if (params.filters && Object.keys(params.filters).length > 0) data.filter = params.filters;
+
+        if (params.search !== undefined && params.search !== '') {
+data.search = params.search;
+}
+
+        if (params.filters && Object.keys(params.filters).length > 0) {
+data.filter = params.filters;
+}
+
         if (params.sort) {
             data.sort = params.sort.column;
             data.direction = params.sort.direction;
         }
-        if (params.page && params.page > 1) data.page = params.page;
+
+        if (params.page && params.page > 1) {
+data.page = params.page;
+}
 
         router.get(plansIndex().url, data, {
             preserveState: true,
@@ -176,6 +189,7 @@ export default function PlansIndex({ plans, tableState }: Props) {
             header: 'Stripe',
             render: (row) => {
                 const id = row.gateway_ids?.stripe;
+
                 return id ? (
                     <span className="font-mono text-xs text-muted-foreground" title={id}>
                         {id.slice(0, 16)}…

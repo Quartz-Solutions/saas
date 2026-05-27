@@ -581,6 +581,7 @@ return [
             'price_cents' => 0,
             'currency' => 'USD',
             'interval' => 'month',
+            'trial_days' => 0,
             'features' => [
                 // booleans
                 'community_support' => true,
@@ -601,9 +602,10 @@ return [
             'name' => 'Pro',
             'slug' => 'pro',
             'description' => 'Everything a growing SaaS needs.',
-            'price_cents' => 2900,
+            'price_cents' => 2000,
             'currency' => 'USD',
             'interval' => 'month',
+            'trial_days' => 7,
             'features' => [
                 'priority_support' => true,
                 'advanced_analytics' => true,
@@ -613,7 +615,7 @@ return [
                 'team_seats' => 20,
                 'storage_gb' => 100,
             ],
-            'cta' => 'Start 14-day trial',
+            'cta' => 'Start 7-day trial',
             'highlighted' => true,
             'gateway_prices' => [
                 'stripe' => env('STRIPE_PRICE_PRO'),
@@ -623,10 +625,11 @@ return [
         'enterprise' => [
             'name' => 'Enterprise',
             'slug' => 'enterprise',
-            'description' => 'For organisations with custom needs.',
-            'price_cents' => 9900,
+            'description' => 'Full feature set with unlimited usage.',
+            'price_cents' => 10000,
             'currency' => 'USD',
             'interval' => 'month',
+            'trial_days' => 7,
             'features' => [
                 'priority_support' => true,
                 'advanced_analytics' => true,

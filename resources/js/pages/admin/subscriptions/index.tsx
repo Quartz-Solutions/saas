@@ -99,13 +99,23 @@ export default function AdminSubscriptionsIndex({
         page?: number;
     }) => {
         const data: Record<string, string | number | Record<string, string>> = {};
-        if (params.search !== undefined && params.search !== '') data.search = params.search;
-        if (params.filters && Object.keys(params.filters).length > 0) data.filter = params.filters;
+
+        if (params.search !== undefined && params.search !== '') {
+data.search = params.search;
+}
+
+        if (params.filters && Object.keys(params.filters).length > 0) {
+data.filter = params.filters;
+}
+
         if (params.sort) {
             data.sort = params.sort.column;
             data.direction = params.sort.direction;
         }
-        if (params.page && params.page > 1) data.page = params.page;
+
+        if (params.page && params.page > 1) {
+data.page = params.page;
+}
 
         router.get(subsIndex().url, data, {
             preserveState: true,

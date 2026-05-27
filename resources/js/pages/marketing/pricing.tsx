@@ -1,10 +1,10 @@
 import { Link, usePage } from '@inertiajs/react';
 import { Check } from 'lucide-react';
+import { show as getStarted } from '@/actions/App/Http/Controllers/Onboarding/GetStartedController';
 import SeoMeta from '@/components/marketing/seo-meta';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
-import { show as getStarted } from '@/actions/App/Http/Controllers/Onboarding/GetStartedController';
 
 type Plan = {
     name: string;

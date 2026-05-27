@@ -1,6 +1,7 @@
 import { Form, Head, Link } from '@inertiajs/react';
 import { ArrowLeft, Save } from 'lucide-react';
 import { useState } from 'react';
+import PlansController from '@/actions/App/Http/Controllers/Admin/PlansController';
 import Heading from '@/components/heading';
 import InputError from '@/components/input-error';
 import { Badge } from '@/components/ui/badge';
@@ -26,7 +27,6 @@ import {
 import { Spinner } from '@/components/ui/spinner';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
-import PlansController from '@/actions/App/Http/Controllers/Admin/PlansController';
 import { index as plansIndex } from '@/routes/admin/plans';
 
 const UNLIMITED = -1;
@@ -97,11 +97,13 @@ export default function PlanEdit({ plan, currencies, featureCatalog }: Props) {
     const setFeature = (slug: string, value: FeatureValue | null) => {
         setFeatures((prev) => {
             const next = { ...prev };
+
             if (value === null) {
                 delete next[slug];
             } else {
                 next[slug] = value;
             }
+
             return next;
         });
     };
@@ -372,6 +374,7 @@ export default function PlanEdit({ plan, currencies, featureCatalog }: Props) {
                                                 : value === false
                                                   ? '0'
                                                   : String(value);
+
                                         return (
                                             <input
                                                 key={slug}
@@ -512,6 +515,7 @@ function BooleanRow({
     error?: string;
 }) {
     const id = `feature-${item.slug}`;
+
     return (
         <div className="rounded-md border bg-muted/20 p-3">
             <label htmlFor={id} className="flex cursor-pointer items-start gap-3">
@@ -585,6 +589,7 @@ function QuotaRow({
                                     placeholder={unlimited ? '∞' : '1'}
                                     onChange={(e) => {
                                         const n = Number(e.target.value);
+
                                         if (Number.isFinite(n) && n > 0) {
                                             setValue(n);
                                         }

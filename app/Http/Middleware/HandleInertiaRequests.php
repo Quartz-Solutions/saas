@@ -5,6 +5,7 @@ namespace App\Http\Middleware;
 use App\Http\Controllers\Marketing\CookieConsentController;
 use App\Models\User;
 use App\Support\Admin\ImpersonationService;
+use App\Support\Cms\GlobalsService;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 use Laravel\Fortify\Features;
@@ -67,6 +68,21 @@ class HandleInertiaRequests extends Middleware
                         ])
                         ->all()
                     : [],
+                // Lightweight list of tenants the current user belongs to —
+                // consumed by the sidebar tenant-switcher. Kept tiny so it's
+                // safe to include on every Inertia response.
+                'tenants' => fn () => $user
+                    ? $user->tenants()
+                        ->orderBy('name')
+                        ->get(['tenants.id', 'tenants.slug', 'tenants.name'])
+                        ->map(fn ($t) => [
+                            'id' => $t->id,
+                            'slug' => $t->slug,
+                            'name' => $t->name,
+                        ])
+                        ->values()
+                        ->all()
+                    : [],
             ],
             'impersonation' => $impersonator === null ? null : [
                 'impersonator' => [
@@ -82,6 +98,16 @@ class HandleInertiaRequests extends Middleware
             // exactly once (e.g. plain-text API tokens & webhook secrets).
             'plain_text_token' => fn () => $request->session()->get('plain_text_token'),
             'webhook_secret' => fn () => $request->session()->get('webhook_secret'),
+            // CMS globals bundle — brand / nav / footer / announcement / etc.
+            // Lazy via closure so the cache only fires when the page reads it.
+            'cmsGlobals' => fn () => app(GlobalsService::class)->forPublic(),
+            // Current + supported locales for the public locale picker.
+            // Lazy — resolved at response time so the locale-resolving
+            // route middleware (cms.locale) has already run.
+            'i18n' => fn () => [
+                'locale' => app()->getLocale(),
+                'locales' => (array) config('cms.locales', ['en']),
+            ],
         ];
     }
 

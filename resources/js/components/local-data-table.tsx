@@ -1,7 +1,7 @@
 import { format, parseISO } from 'date-fns';
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Download, Filter, Loader2, Search, Settings2 } from 'lucide-react';
 import { useState, useMemo, useEffect, useRef } from 'react';
-import { type DateRange } from 'react-day-picker';
+import type {DateRange} from 'react-day-picker';
 
 import { Button } from '@/components/ui/button';
 import { DateRangePicker } from '@/components/ui/date-range-picker';
@@ -171,6 +171,7 @@ export function LocalDataTable<T extends object>({
     // Filter data by dropdown filters
     const dropdownFilteredData = useMemo(() => {
         let result = data;
+
         for (const [key, value] of Object.entries(activeFilters)) {
             if (value && value !== '') {
                 const filter = filters.find(f => String(f.key) === key);
@@ -179,7 +180,11 @@ export function LocalDataTable<T extends object>({
                     const [fromStr, toStr] = value.split('|');
                     result = result.filter((row) => {
                         const rowValue = row[key as keyof T];
-                        if (!rowValue) return false;
+
+                        if (!rowValue) {
+return false;
+}
+
                         const rowDate = new Date(String(rowValue));
                         const fromDate = fromStr ? new Date(fromStr) : null;
                         const toDate = toStr ? new Date(toStr) : null;
@@ -189,27 +194,38 @@ export function LocalDataTable<T extends object>({
                         } else if (fromDate) {
                             return rowDate >= fromDate;
                         }
+
                         return true;
                     });
                 } else {
                     result = result.filter((row) => {
                         const rowValue = row[key as keyof T];
+
                         return String(rowValue) === value;
                     });
                 }
             }
         }
+
         return result;
     }, [data, activeFilters, filters]);
 
     // Filter data by search
     const filteredData = useMemo(() => {
-        if (!search.trim() || searchKeys.length === 0) return dropdownFilteredData;
+        if (!search.trim() || searchKeys.length === 0) {
+return dropdownFilteredData;
+}
+
         const searchLower = search.toLowerCase();
+
         return dropdownFilteredData.filter((row) =>
             searchKeys.some((key) => {
                 const value = row[key];
-                if (value === null || value === undefined) return false;
+
+                if (value === null || value === undefined) {
+return false;
+}
+
                 return String(value).toLowerCase().includes(searchLower);
             })
         );
@@ -228,26 +244,38 @@ export function LocalDataTable<T extends object>({
         const newKeys = Object.keys(map).sort().join(',');
         const prevVals = Object.values(columnSortKeysRef.current).map(String).join(',');
         const newVals = Object.values(map).map(String).join(',');
+
         if (prevKeys === newKeys && prevVals === newVals) {
             return columnSortKeysRef.current;
         }
+
         columnSortKeysRef.current = map;
+
         return map;
     }, [columns]);
 
     // Sort data
     const sortedData = useMemo(() => {
-        if (!sortKey) return filteredData;
+        if (!sortKey) {
+return filteredData;
+}
+
         const actualSortKey = columnSortKeys[sortKey] || sortKey;
 
         return [...filteredData].sort((a, b) => {
             const aVal = a[actualSortKey as keyof T];
             const bVal = b[actualSortKey as keyof T];
 
-            if (aVal === null || aVal === undefined) return 1;
-            if (bVal === null || bVal === undefined) return -1;
+            if (aVal === null || aVal === undefined) {
+return 1;
+}
+
+            if (bVal === null || bVal === undefined) {
+return -1;
+}
 
             let comparison = 0;
+
             if (typeof aVal === 'number' && typeof bVal === 'number') {
                 comparison = aVal - bVal;
             } else {
@@ -262,6 +290,7 @@ export function LocalDataTable<T extends object>({
     const totalPages = Math.ceil(sortedData.length / pageSize);
     const paginatedData = useMemo(() => {
         const start = (page - 1) * pageSize;
+
         return sortedData.slice(start, start + pageSize);
     }, [sortedData, page, pageSize]);
 
@@ -294,7 +323,10 @@ export function LocalDataTable<T extends object>({
     };
 
     const getSortIcon = (key: string) => {
-        if (sortKey !== key) return <span className="text-xs">↕</span>;
+        if (sortKey !== key) {
+return <span className="text-xs">↕</span>;
+}
+
         return sortDir === 'asc'
             ? <span className="text-xs">↑</span>
             : <span className="text-xs">↓</span>;
@@ -332,6 +364,7 @@ export function LocalDataTable<T extends object>({
                 if (value !== '' && value !== null && value !== undefined) {
                     acc[key] = value;
                 }
+
                 return acc;
             },
             {} as Record<string, string>
@@ -350,8 +383,12 @@ export function LocalDataTable<T extends object>({
 
     // Convert string to DateRange for daterange filters
     const parseDateRangeValue = (value: string | undefined): DateRange | undefined => {
-        if (!value) return undefined;
+        if (!value) {
+return undefined;
+}
+
         const [fromStr, toStr] = value.split('|');
+
         return {
             from: fromStr ? parseISO(fromStr) : undefined,
             to: toStr ? parseISO(toStr) : undefined,
@@ -360,9 +397,13 @@ export function LocalDataTable<T extends object>({
 
     // Convert DateRange to string for storage
     const formatDateRangeValue = (range: DateRange | undefined): string => {
-        if (!range?.from) return '';
+        if (!range?.from) {
+return '';
+}
+
         const from = format(range.from, 'yyyy-MM-dd');
         const to = range.to ? format(range.to, 'yyyy-MM-dd') : '';
+
         return to ? `${from}|${to}` : from;
     };
 
@@ -378,12 +419,15 @@ export function LocalDataTable<T extends object>({
     const getFilterDisplayValue = (filter: LocalTableFilter<T>, value: string): string => {
         if (filter.type === 'select' && filter.options) {
             const option = filter.options.find((opt) => opt.value === value);
+
             return option?.label || value;
         } else if (filter.type === 'daterange' && value.includes('|')) {
             const [from, to] = value.split('|');
             const formatDate = (dateStr: string) => formatDateUtil(dateStr, dateStr);
+
             return to ? `${formatDate(from)} - ${formatDate(to)}` : formatDate(from);
         }
+
         return value;
     };
 
@@ -421,6 +465,7 @@ export function LocalDataTable<T extends object>({
 
                     // Convert to string and escape quotes
                     const strValue = String(value).replace(/"/g, '""');
+
                     return `"${strValue}"`;
                 });
                 csvRows.push(values.join(','));
@@ -550,7 +595,10 @@ export function LocalDataTable<T extends object>({
                     )}
                     {Object.entries(activeFilters).map(([key, value]) => {
                         const filter = filters.find((f) => String(f.key) === key);
-                        if (!filter || !value) return null;
+
+                        if (!filter || !value) {
+return null;
+}
 
                         const displayValue = getFilterDisplayValue(filter, value);
 

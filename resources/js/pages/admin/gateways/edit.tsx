@@ -338,7 +338,9 @@ function FieldRow({
                             : undefined
                     }
                     onFocus={() => {
-                        if (isSecret && value === SECRET_MASK) setValue('');
+                        if (isSecret && value === SECRET_MASK) {
+setValue('');
+}
                     }}
                     onChange={(e) => setValue(e.target.value)}
                     autoComplete={isSecret ? 'new-password' : 'off'}

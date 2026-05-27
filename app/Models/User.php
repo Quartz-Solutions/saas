@@ -25,6 +25,8 @@ use Spatie\Permission\Traits\HasRoles;
     'last_login_ip',
     'last_login_at',
     'last_seen_at',
+    'suspended_at',
+    'force_password_reset',
     'current_tenant_id',
 ])]
 #[Hidden(['password', 'two_factor_secret', 'two_factor_recovery_codes', 'remember_token'])]
@@ -55,6 +57,8 @@ class User extends Authenticatable
             'two_factor_confirmed_at' => 'datetime',
             'last_login_at' => 'datetime',
             'last_seen_at' => 'datetime',
+            'suspended_at' => 'datetime',
+            'force_password_reset' => 'boolean',
         ];
     }
 

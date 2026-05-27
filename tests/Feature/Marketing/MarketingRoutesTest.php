@@ -15,6 +15,8 @@ class MarketingRoutesTest extends TestCase
 
     public function test_home_page_renders_with_public_layout(): void
     {
+        $this->seed(\Database\Seeders\CmsFeaturesSeeder::class);
+
         $response = $this->get(route('home'));
 
         $response->assertOk();

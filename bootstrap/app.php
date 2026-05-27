@@ -3,6 +3,8 @@
 use App\Http\Middleware\EnsureTenantMembership;
 use App\Http\Middleware\HandleAppearance;
 use App\Http\Middleware\HandleInertiaRequests;
+use App\Http\Middleware\HandleRedirects;
+use App\Http\Middleware\SetCmsLocale;
 use App\Http\Middleware\SetCurrentTenant;
 use App\Http\Middleware\SetGlobalPermissionsTeam;
 use Illuminate\Foundation\Application;
@@ -22,7 +24,11 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        $middleware->encryptCookies(except: ['appearance', 'sidebar_state']);
+        $middleware->encryptCookies(except: ['appearance', 'sidebar_state', 'cms_locale']);
+
+        // CMS redirects run *before* route matching so unmatched paths
+        // (e.g. /old-blog) still get a 30x rather than a 404.
+        $middleware->prepend(HandleRedirects::class);
 
         // Gateway webhooks are signed at the application layer
         // (gateway-specific HMAC) — CSRF tokens are meaningless for
@@ -37,6 +43,9 @@ return Application::configure(basePath: dirname(__DIR__))
             AddLinkHeadersForPreloadedAssets::class,
         ]);
 
+        // Middleware aliases. `cms.locale` is applied per-route to the
+        // public marketing surface only so authed scopes (/admin,
+        // /settings, /t/*) keep their own locale handling.
         $middleware->alias([
             'tenant' => SetCurrentTenant::class,
             'tenant.member' => EnsureTenantMembership::class,
@@ -44,6 +53,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'role' => RoleMiddleware::class,
             'permission' => PermissionMiddleware::class,
             'role_or_permission' => RoleOrPermissionMiddleware::class,
+            'cms.locale' => SetCmsLocale::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

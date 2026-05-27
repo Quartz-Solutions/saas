@@ -1,11 +1,12 @@
 import { Head, Link, router, usePage } from '@inertiajs/react';
 import { Download, ExternalLink } from 'lucide-react';
 import {
-    DataTable,
-    type DataTableColumn,
-    type DataTableFilter,
-    type PaginationData,
+    DataTable
+    
+    
+    
 } from '@/components/data-table/data-table';
+import type {DataTableColumn, DataTableFilter, PaginationData} from '@/components/data-table/data-table';
 import Heading from '@/components/heading';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -61,13 +62,23 @@ export default function BillingInvoices({ invoices, tableState }: Props) {
         page?: number;
     }) => {
         const data: Record<string, string | number | Record<string, string>> = {};
-        if (params.search !== undefined && params.search !== '') data.search = params.search;
-        if (params.filters && Object.keys(params.filters).length > 0) data.filter = params.filters;
+
+        if (params.search !== undefined && params.search !== '') {
+data.search = params.search;
+}
+
+        if (params.filters && Object.keys(params.filters).length > 0) {
+data.filter = params.filters;
+}
+
         if (params.sort) {
             data.sort = params.sort.column;
             data.direction = params.sort.direction;
         }
-        if (params.page && params.page > 1) data.page = params.page;
+
+        if (params.page && params.page > 1) {
+data.page = params.page;
+}
 
         router.get(tenantRoutes.billing.invoices.index({ tenantSlug }).url, data, {
             preserveState: true,
@@ -251,6 +262,7 @@ BillingInvoices.layout = ({
     currentTenant: { slug: string; name: string } | null;
 }) => {
     const slug = currentTenant?.slug ?? '';
+
     return {
         breadcrumbs: [
             {

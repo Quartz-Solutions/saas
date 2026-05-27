@@ -1,13 +1,15 @@
 import { Form, Head, Link, router } from '@inertiajs/react';
 import { LogIn, MoreHorizontal } from 'lucide-react';
 import { useState } from 'react';
-import {
-    DataTable
-    
-    
-    
+import TenantsAdminController from '@/actions/App/Http/Controllers/Admin/TenantsAdminController';
+import { SavedViews  } from '@/components/admin/entity-detail/saved-views';
+import type {SavedView} from '@/components/admin/entity-detail/saved-views';
+import { DataTable } from '@/components/data-table/data-table';
+import type {
+    DataTableColumn,
+    DataTableFilter,
+    PaginationData,
 } from '@/components/data-table/data-table';
-import type {DataTableColumn, DataTableFilter, PaginationData} from '@/components/data-table/data-table';
 import Heading from '@/components/heading';
 import {
     AlertDialog,
@@ -17,6 +19,7 @@ import {
     AlertDialogHeader,
     AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -27,42 +30,75 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Spinner } from '@/components/ui/spinner';
 import { formatDateTime } from '@/lib/utils';
-import TenantsAdminController from '@/actions/App/Http/Controllers/Admin/TenantsAdminController';
 import { index as adminTenantsIndex, show as adminTenantsShow } from '@/routes/admin/tenants';
 
 type TenantRow = {
     id: number;
     slug: string;
     name: string;
+    logo_path: string | null;
     status: string;
     currency: string;
     created_at: string | null;
+    deleted_at: string | null;
     owner: { id: number; name: string; email: string } | null;
     members_count: number;
+    plan: { slug: string; name: string } | null;
+    mrr_cents: number | null;
+    subscription_status: string | null;
 };
 
 type Props = {
-    tenants: {
-        data: TenantRow[];
-        meta: PaginationData;
-    };
+    tenants: { data: TenantRow[]; meta: PaginationData };
     tableState: {
         search: string;
         filters: Record<string, string>;
         sort: { column: string; direction: 'asc' | 'desc' };
+        view: string;
     };
+    viewCounts: Record<string, number>;
 };
 
-export default function AdminTenantsIndex({ tenants, tableState }: Props) {
+function formatMoney(cents: number, currency: string): string {
+    try {
+        return new Intl.NumberFormat('en-US', {
+            style: 'currency',
+            currency: (currency || 'USD').toUpperCase(),
+            maximumFractionDigits: 0,
+        }).format(cents / 100);
+    } catch {
+        return `${(cents / 100).toFixed(0)} ${currency}`;
+    }
+}
+
+function statusBadge(status: string, deletedAt: string | null) {
+    if (deletedAt) {
+return { v: 'outline' as const, label: 'Archived' };
+}
+
+    switch (status) {
+        case 'active':
+            return { v: 'default' as const, label: 'Active' };
+        case 'suspended':
+            return { v: 'destructive' as const, label: 'Suspended' };
+        case 'pending_deletion':
+            return { v: 'secondary' as const, label: 'Pending deletion' };
+        default:
+            return { v: 'outline' as const, label: status };
+    }
+}
+
+export default function AdminTenantsIndex({ tenants, tableState, viewCounts }: Props) {
     const reload = (params: {
         search?: string;
         filters?: Record<string, string>;
         sort?: { column: string; direction: 'asc' | 'desc' };
         page?: number;
+        view?: string | null;
     }) => {
-        const data: Record<string, string | number | Record<string, string>> = {};
+        const data: Record<string, unknown> = {};
 
-        if (params.search !== undefined && params.search !== '') {
+        if (params.search) {
 data.search = params.search;
 }
 
@@ -79,32 +115,65 @@ data.filter = params.filters;
 data.page = params.page;
 }
 
-        router.get(adminTenantsIndex().url, data, {
+        if (params.view) {
+data.view = params.view;
+}
+
+        router.get(adminTenantsIndex().url, data as Record<string, string | number | Record<string, string>>, {
             preserveState: true,
             preserveScroll: true,
             replace: true,
-            only: ['tenants', 'tableState'],
+            only: ['tenants', 'tableState', 'viewCounts'],
         });
     };
 
+    const onView = (v: string | null) =>
+        reload({ view: v ?? undefined, search: tableState.search });
+
     const [impersonating, setImpersonating] = useState<TenantRow | null>(null);
+
+    const savedViews: SavedView[] = [
+        { value: 'active', label: 'Active', count: viewCounts.active },
+        { value: 'trialing', label: 'Trialing' },
+        { value: 'past_due', label: 'Past due', count: viewCounts.past_due },
+        { value: 'suspended', label: 'Suspended', count: viewCounts.suspended },
+        { value: 'archived', label: 'Archived', count: viewCounts.archived },
+    ];
 
     const columns: DataTableColumn<TenantRow>[] = [
         {
             key: 'name',
-            header: 'Name',
+            header: 'Tenant',
             sortable: true,
-            render: (row) => (
-                <div className="flex flex-col">
-                    <Link
-                        href={adminTenantsShow({ tenant: row.id })}
-                        className="font-medium hover:underline"
-                    >
-                        {row.name}
-                    </Link>
-                    <span className="text-xs text-muted-foreground">{row.slug}</span>
-                </div>
-            ),
+            render: (row) => {
+                const badge = statusBadge(row.status, row.deleted_at);
+
+                return (
+                    <div className="flex items-center gap-2.5">
+                        <Avatar className="size-8 rounded-md">
+                            {row.logo_path && <AvatarImage src={row.logo_path} />}
+                            <AvatarFallback className="rounded-md text-[10px]">
+                                {row.name.slice(0, 2).toUpperCase()}
+                            </AvatarFallback>
+                        </Avatar>
+                        <div className="flex flex-col">
+                            <Link
+                                href={adminTenantsShow({ tenant: row.id })}
+                                className="font-medium hover:underline"
+                                data-test={`tenant-link-${row.id}`}
+                            >
+                                {row.name}
+                            </Link>
+                            <span className="text-xs text-muted-foreground">
+                                /t/{row.slug}
+                            </span>
+                        </div>
+                        <Badge variant={badge.v} className="ml-1 text-[10px]">
+                            {badge.label}
+                        </Badge>
+                    </div>
+                );
+            },
         },
         {
             key: 'owner',
@@ -112,7 +181,7 @@ data.page = params.page;
             render: (row) =>
                 row.owner ? (
                     <div className="flex flex-col">
-                        <span>{row.owner.name}</span>
+                        <span className="text-sm">{row.owner.name}</span>
                         <span className="text-xs text-muted-foreground">{row.owner.email}</span>
                     </div>
                 ) : (
@@ -120,17 +189,30 @@ data.page = params.page;
                 ),
         },
         {
-            key: 'status',
-            header: 'Status',
-            sortable: true,
-            render: (row) => <Badge variant="outline">{row.status}</Badge>,
+            key: 'plan',
+            header: 'Plan',
+            render: (row) => (
+                <div className="flex flex-col">
+                    <span className="text-sm">{row.plan?.name ?? '—'}</span>
+                    {row.subscription_status && (
+                        <Badge variant="outline" className="w-fit text-[10px]">
+                            {row.subscription_status}
+                        </Badge>
+                    )}
+                </div>
+            ),
         },
         {
-            key: 'currency',
-            header: 'Currency',
-            render: (row) => (
-                <span className="font-mono text-xs">{row.currency}</span>
-            ),
+            key: 'mrr',
+            header: 'MRR',
+            render: (row) =>
+                row.mrr_cents !== null && row.mrr_cents > 0 ? (
+                    <span className="font-mono text-sm tabular-nums">
+                        {formatMoney(row.mrr_cents, row.currency)}
+                    </span>
+                ) : (
+                    <span className="text-muted-foreground">—</span>
+                ),
         },
         {
             key: 'members_count',
@@ -151,7 +233,7 @@ data.page = params.page;
                         {formatDateTime(row.created_at)}
                     </span>
                 ) : (
-                    <span className="text-muted-foreground">—</span>
+                    '—'
                 ),
         },
         {
@@ -173,9 +255,16 @@ data.page = params.page;
                             </Link>
                         </DropdownMenuItem>
                         <DropdownMenuItem
-                            disabled={row.owner === null}
-                            onSelect={() => row.owner && setImpersonating(row)}
+                            disabled={row.owner === null || row.deleted_at !== null}
+                            onSelect={(e) => {
+                                e.preventDefault();
+
+                                if (row.owner) {
+setImpersonating(row);
+}
+                            }}
                         >
+                            <LogIn className="size-4" />
                             Impersonate owner
                         </DropdownMenuItem>
                     </DropdownMenuContent>
@@ -192,17 +281,11 @@ data.page = params.page;
             placeholder: 'Any',
             options: [
                 { label: 'Active', value: 'active' },
-                { label: 'Trialing', value: 'trialing' },
-                { label: 'Past due', value: 'past_due' },
-                { label: 'Cancelled', value: 'cancelled' },
+                { label: 'Suspended', value: 'suspended' },
+                { label: 'Pending deletion', value: 'pending_deletion' },
             ],
         },
-        {
-            key: 'currency',
-            label: 'Currency',
-            type: 'text',
-            placeholder: 'USD',
-        },
+        { key: 'currency', label: 'Currency', type: 'text', placeholder: 'USD' },
         {
             key: 'created_at',
             label: 'Created between',
@@ -219,9 +302,16 @@ data.page = params.page;
                 <div className="flex items-start justify-between gap-4">
                     <Heading
                         title="Tenants"
-                        description="Every tenant across the system. Includes soft-deleted records on detail pages."
+                        description="Every tenant across the system. Use saved views to filter quickly."
                     />
                 </div>
+
+                <SavedViews
+                    views={savedViews}
+                    value={tableState.view || null}
+                    onChange={onView}
+                    allCount={viewCounts.all}
+                />
 
                 <DataTable<TenantRow>
                     tableId="admin-tenants-index"
@@ -232,14 +322,15 @@ data.page = params.page;
                     initialSearch={tableState.search}
                     initialFilters={tableState.filters}
                     initialSort={tableState.sort}
-                    onSearch={(search) => reload({ search })}
-                    onFilter={(f) => reload({ filters: f, search: tableState.search })}
+                    onSearch={(s) => reload({ search: s, view: tableState.view })}
+                    onFilter={(f) => reload({ filters: f, search: tableState.search, view: tableState.view })}
                     onClearAll={() => reload({})}
                     onSort={(column, direction) =>
                         reload({
                             search: tableState.search,
                             filters: tableState.filters,
                             sort: { column, direction },
+                            view: tableState.view,
                         })
                     }
                     onPageChange={(page) =>
@@ -248,6 +339,7 @@ data.page = params.page;
                             filters: tableState.filters,
                             sort: tableState.sort,
                             page,
+                            view: tableState.view,
                         })
                     }
                 />
@@ -269,15 +361,15 @@ function ConfirmImpersonateDialog({
     onClose: () => void;
 }) {
     return (
-        <AlertDialog open={tenant !== null} onOpenChange={(open) => !open && onClose()}>
+        <AlertDialog open={tenant !== null} onOpenChange={(o) => !o && onClose()}>
             <AlertDialogContent>
                 <AlertDialogHeader>
                     <AlertDialogTitle>Impersonate tenant owner?</AlertDialogTitle>
                     <AlertDialogDescription>
                         You will be logged in as{' '}
                         <span className="font-medium">{tenant?.owner?.email}</span>{' '}
-                        for tenant <span className="font-medium">{tenant?.name}</span>.
-                        Your original session can be restored from the impersonation banner.
+                        for <span className="font-medium">{tenant?.name}</span>. Restore via
+                        the impersonation banner.
                     </AlertDialogDescription>
                 </AlertDialogHeader>
                 {tenant && (
@@ -288,11 +380,7 @@ function ConfirmImpersonateDialog({
                     >
                         {({ processing }) => (
                             <AlertDialogFooter>
-                                <Button
-                                    type="button"
-                                    variant="secondary"
-                                    onClick={onClose}
-                                >
+                                <Button type="button" variant="secondary" onClick={onClose}>
                                     Cancel
                                 </Button>
                                 <Button type="submit" disabled={processing}>

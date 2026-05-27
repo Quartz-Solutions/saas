@@ -59,7 +59,10 @@ type Props = {
 };
 
 function formatMoney(cents: number, currency: string): string {
-    if (cents === 0) return 'Free';
+    if (cents === 0) {
+return 'Free';
+}
+
     try {
         return new Intl.NumberFormat('en-US', {
             style: 'currency',
@@ -214,18 +217,6 @@ export default function BillingPlans({ plans, subscription, gateways, default_ga
                         </Card>
                     ))}
                 </div>
-
-                {gateways.length === 0 && (
-                    <Card className="border-amber-200 bg-amber-50 dark:bg-amber-950">
-                        <CardHeader>
-                            <CardTitle>No payment gateway configured</CardTitle>
-                            <CardDescription>
-                                Set <code className="font-mono">STRIPE_SECRET</code> in <code className="font-mono">.env</code>{' '}
-                                to enable paid plan checkout. The free plan still works without a gateway.
-                            </CardDescription>
-                        </CardHeader>
-                    </Card>
-                )}
             </div>
 
             <CancelDialog
@@ -309,6 +300,7 @@ BillingPlans.layout = ({
     currentTenant: { slug: string; name: string } | null;
 }) => {
     const slug = currentTenant?.slug ?? '';
+
     return {
         breadcrumbs: [
             {

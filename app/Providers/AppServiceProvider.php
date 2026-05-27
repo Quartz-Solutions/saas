@@ -29,6 +29,11 @@ use App\Support\Billing\PayPal\PayPalGateway;
 use App\Support\Billing\PayTabs\PayTabsGateway;
 use App\Support\Billing\Stripe\StripeGateway;
 use App\Support\Billing\Telr\TelrGateway;
+use App\Support\Newsletter\ConvertKitNewsletterProvider;
+use App\Support\Newsletter\DatabaseNewsletterProvider;
+use App\Support\Newsletter\MailchimpNewsletterProvider;
+use App\Support\Newsletter\NewsletterProviderRegistry;
+use App\Support\Newsletter\ResendNewsletterProvider;
 use App\Support\Tenancy\PathTenantResolver;
 use App\Support\Tenancy\TenantResolver;
 use Carbon\CarbonImmutable;
@@ -66,6 +71,16 @@ class AppServiceProvider extends ServiceProvider
         });
 
         $this->app->singleton(TenantResolver::class, PathTenantResolver::class);
+
+        $this->app->singleton(NewsletterProviderRegistry::class, function () {
+            $registry = new NewsletterProviderRegistry;
+            $registry->register(new DatabaseNewsletterProvider);
+            $registry->register(new MailchimpNewsletterProvider);
+            $registry->register(new ResendNewsletterProvider);
+            $registry->register(new ConvertKitNewsletterProvider);
+
+            return $registry;
+        });
 
         $this->app->singleton(PwnedPasswords::class);
 

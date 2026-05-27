@@ -1,14 +1,24 @@
-import AppLogoIcon from '@/components/app-logo-icon';
+import { usePage } from '@inertiajs/react';
+import BrandMark from '@/components/brand-mark';
+
+type SharedProps = {
+    name?: string;
+    currentTenant: { name: string } | null;
+};
 
 export default function AppLogo() {
+    const { currentTenant, name } = usePage<SharedProps>().props;
+    const brand = currentTenant?.name ?? name ?? 'App';
+
     return (
         <>
-            <div className="flex aspect-square size-8 items-center justify-center rounded-md bg-sidebar-primary text-sidebar-primary-foreground">
-                <AppLogoIcon className="size-5 fill-current text-white dark:text-black" />
-            </div>
+            <BrandMark />
             <div className="ml-1 grid flex-1 text-left text-sm">
-                <span className="mb-0.5 truncate leading-tight font-semibold">
-                    Laravel Starter Kit
+                <span
+                    className="mb-0.5 truncate leading-tight font-semibold"
+                    data-test="app-brand-name"
+                >
+                    {brand}
                 </span>
             </div>
         </>

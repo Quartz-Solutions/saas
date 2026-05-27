@@ -1,10 +1,10 @@
 import { Download, Filter, Loader2, Search } from 'lucide-react';
 
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import type { DataTableColumn } from './data-table';
 import { DataTableColumnToggle } from './data-table-column-toggle';
 
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 
 
 interface DataTableToolbarProps<T> {

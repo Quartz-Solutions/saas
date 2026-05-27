@@ -2,6 +2,15 @@
 
 use App\Http\Controllers\Admin\AuditLogsController;
 use App\Http\Controllers\Admin\CheckoutSessionsController;
+use App\Http\Controllers\Admin\Cms\BlogPostsController;
+use App\Http\Controllers\Admin\Cms\CollectionsController;
+use App\Http\Controllers\Admin\Cms\FormsController;
+use App\Http\Controllers\Admin\Cms\GlobalsController;
+use App\Http\Controllers\Admin\Cms\MediaController;
+use App\Http\Controllers\Admin\Cms\PagesController;
+use App\Http\Controllers\Admin\Cms\PageVersionsController;
+use App\Http\Controllers\Admin\Cms\PreviewLinkController;
+use App\Http\Controllers\Admin\Cms\RedirectsController;
 use App\Http\Controllers\Admin\DashboardController;
 use App\Http\Controllers\Admin\FeatureFlagOverridesController;
 use App\Http\Controllers\Admin\FeatureFlagsController;
@@ -11,6 +20,7 @@ use App\Http\Controllers\Admin\SettingsController;
 use App\Http\Controllers\Admin\SubscriptionActionsController;
 use App\Http\Controllers\Admin\SubscriptionsAdminController;
 use App\Http\Controllers\Admin\TenantsAdminController;
+use App\Http\Controllers\Admin\UsersAdminController;
 use App\Http\Controllers\Admin\WebhookEventsController;
 use Illuminate\Support\Facades\Route;
 
@@ -36,9 +46,77 @@ Route::middleware(['auth', 'verified', 'admin.scope', 'role:Super Admin'])
         Route::get('tenants', [TenantsAdminController::class, 'index'])
             ->name('tenants.index');
         Route::get('tenants/{tenant}', [TenantsAdminController::class, 'show'])
+            ->whereNumber('tenant')
             ->name('tenants.show');
         Route::post('tenants/{tenant}/impersonate', [TenantsAdminController::class, 'impersonate'])
+            ->whereNumber('tenant')
             ->name('tenants.impersonate');
+        Route::post('tenants/{tenant}/suspend', [TenantsAdminController::class, 'suspend'])
+            ->whereNumber('tenant')
+            ->name('tenants.suspend');
+        Route::post('tenants/{tenantId}/restore', [TenantsAdminController::class, 'restore'])
+            ->whereNumber('tenantId')
+            ->name('tenants.restore');
+        Route::delete('tenants/{tenant}', [TenantsAdminController::class, 'destroy'])
+            ->whereNumber('tenant')
+            ->name('tenants.destroy');
+        Route::delete('tenants/{tenantId}/force', [TenantsAdminController::class, 'forceDelete'])
+            ->whereNumber('tenantId')
+            ->name('tenants.force-delete');
+        Route::get('tenants/{tenant}/gdpr-export', [TenantsAdminController::class, 'gdprExport'])
+            ->whereNumber('tenant')
+            ->name('tenants.gdpr-export');
+
+        // Tenant member operations.
+        Route::delete('tenants/{tenant}/members/{user}', [TenantsAdminController::class, 'removeMember'])
+            ->whereNumber('tenant')->whereNumber('user')
+            ->name('tenants.members.destroy');
+        Route::post('tenants/{tenant}/members/{user}/impersonate', [TenantsAdminController::class, 'impersonateMember'])
+            ->whereNumber('tenant')->whereNumber('user')
+            ->name('tenants.members.impersonate');
+        Route::post('tenants/{tenant}/transfer-ownership', [TenantsAdminController::class, 'transferOwnership'])
+            ->whereNumber('tenant')
+            ->name('tenants.transfer-ownership');
+
+        // Users admin.
+        Route::get('users', [UsersAdminController::class, 'index'])
+            ->name('users.index');
+        Route::get('users/{user}', [UsersAdminController::class, 'show'])
+            ->whereNumber('user')
+            ->name('users.show');
+        Route::post('users/{user}/suspend', [UsersAdminController::class, 'suspend'])
+            ->whereNumber('user')
+            ->name('users.suspend');
+        Route::post('users/{user}/restore', [UsersAdminController::class, 'restore'])
+            ->whereNumber('user')
+            ->name('users.restore');
+        Route::post('users/{user}/resend-verification', [UsersAdminController::class, 'resendVerification'])
+            ->whereNumber('user')
+            ->name('users.resend-verification');
+        Route::post('users/{user}/force-password-reset', [UsersAdminController::class, 'forcePasswordReset'])
+            ->whereNumber('user')
+            ->name('users.force-password-reset');
+        Route::post('users/{user}/disable-two-factor', [UsersAdminController::class, 'disableTwoFactor'])
+            ->whereNumber('user')
+            ->name('users.disable-two-factor');
+        Route::post('users/{user}/revoke-sessions', [UsersAdminController::class, 'revokeSessions'])
+            ->whereNumber('user')
+            ->name('users.revoke-sessions');
+        Route::post('users/{user}/revoke-tokens', [UsersAdminController::class, 'revokeTokens'])
+            ->whereNumber('user')
+            ->name('users.revoke-tokens');
+        Route::post('users/{user}/grant-super-admin', [UsersAdminController::class, 'grantSuperAdmin'])
+            ->whereNumber('user')
+            ->name('users.grant-super-admin');
+        Route::post('users/{user}/revoke-super-admin', [UsersAdminController::class, 'revokeSuperAdmin'])
+            ->whereNumber('user')
+            ->name('users.revoke-super-admin');
+        Route::post('users/{user}/impersonate', [UsersAdminController::class, 'impersonate'])
+            ->whereNumber('user')
+            ->name('users.impersonate');
+        Route::get('users/{user}/gdpr-export', [UsersAdminController::class, 'gdprExport'])
+            ->whereNumber('user')
+            ->name('users.gdpr-export');
 
         // Webhook events
         Route::get('webhooks', [WebhookEventsController::class, 'index'])
@@ -110,6 +188,145 @@ Route::middleware(['auth', 'verified', 'admin.scope', 'role:Super Admin'])
             ->name('checkout-sessions.show');
         Route::post('checkout-sessions/{checkoutSession}/force-cancel', [CheckoutSessionsController::class, 'forceCancel'])
             ->name('checkout-sessions.force-cancel');
+
+        /*
+        |---------------------------------------------------------------------
+        | CMS scope — /admin/cms/...
+        | Marketing/CMS management. All routes named `admin.cms.*`.
+        |---------------------------------------------------------------------
+        */
+        Route::prefix('cms')->name('cms.')->group(function () {
+            // Pages
+            Route::get('pages', [PagesController::class, 'index'])
+                ->name('pages.index');
+            Route::get('pages/create', [PagesController::class, 'create'])
+                ->name('pages.create');
+            Route::post('pages', [PagesController::class, 'store'])
+                ->name('pages.store');
+            Route::get('pages/{cms_page}/edit', [PagesController::class, 'edit'])
+                ->whereNumber('cms_page')
+                ->name('pages.edit');
+            Route::patch('pages/{cms_page}', [PagesController::class, 'update'])
+                ->whereNumber('cms_page')
+                ->name('pages.update');
+            Route::delete('pages/{cms_page}', [PagesController::class, 'destroy'])
+                ->whereNumber('cms_page')
+                ->name('pages.destroy');
+            Route::post('pages/{id}/restore', [PagesController::class, 'restore'])
+                ->whereNumber('id')
+                ->name('pages.restore');
+
+            // Signed preview URL (JSON; React drops it into an iframe).
+            Route::get('pages/{cms_page}/preview-link', [PreviewLinkController::class, 'show'])
+                ->whereNumber('cms_page')
+                ->name('pages.preview-link');
+
+            // Page versions
+            Route::get('pages/{cms_page}/versions', [PageVersionsController::class, 'index'])
+                ->whereNumber('cms_page')
+                ->name('pages.versions.index');
+            Route::post('pages/{cms_page}/versions/{version}/restore', [PageVersionsController::class, 'restore'])
+                ->whereNumber('cms_page')
+                ->whereNumber('version')
+                ->name('pages.versions.restore');
+
+            // Globals — site-wide singletons
+            Route::get('globals', [GlobalsController::class, 'index'])
+                ->name('globals.index');
+            Route::get('globals/{key}', [GlobalsController::class, 'edit'])
+                ->where('key', '[a-z0-9_]+')
+                ->name('globals.edit');
+            Route::patch('globals/{key}', [GlobalsController::class, 'update'])
+                ->where('key', '[a-z0-9_]+')
+                ->name('globals.update');
+
+            // Reusable collections (features, testimonials, faqs, logos)
+            Route::get('collections/{type}', [CollectionsController::class, 'index'])
+                ->where('type', 'features|testimonials|faqs|logos')
+                ->name('collections.index');
+            Route::post('collections/{type}', [CollectionsController::class, 'store'])
+                ->where('type', 'features|testimonials|faqs|logos')
+                ->name('collections.store');
+            Route::patch('collections/{type}/{id}', [CollectionsController::class, 'update'])
+                ->where('type', 'features|testimonials|faqs|logos')
+                ->whereNumber('id')
+                ->name('collections.update');
+            Route::delete('collections/{type}/{id}', [CollectionsController::class, 'destroy'])
+                ->where('type', 'features|testimonials|faqs|logos')
+                ->whereNumber('id')
+                ->name('collections.destroy');
+
+            // Blog posts
+            Route::prefix('blog')->name('blog.')->group(function () {
+                Route::get('posts', [BlogPostsController::class, 'index'])
+                    ->name('posts.index');
+                Route::get('posts/create', [BlogPostsController::class, 'create'])
+                    ->name('posts.create');
+                Route::post('posts', [BlogPostsController::class, 'store'])
+                    ->name('posts.store');
+                Route::get('posts/{post}/edit', [BlogPostsController::class, 'edit'])
+                    ->whereNumber('post')
+                    ->name('posts.edit');
+                Route::patch('posts/{post}', [BlogPostsController::class, 'update'])
+                    ->whereNumber('post')
+                    ->name('posts.update');
+                Route::delete('posts/{post}', [BlogPostsController::class, 'destroy'])
+                    ->whereNumber('post')
+                    ->name('posts.destroy');
+            });
+
+            // Forms + submissions
+            Route::prefix('forms')->name('forms.')->group(function () {
+                Route::get('/', [FormsController::class, 'index'])
+                    ->name('index');
+                Route::get('create', [FormsController::class, 'create'])
+                    ->name('create');
+                Route::post('/', [FormsController::class, 'store'])
+                    ->name('store');
+                Route::get('{form}/edit', [FormsController::class, 'edit'])
+                    ->whereNumber('form')
+                    ->name('edit');
+                Route::patch('{form}', [FormsController::class, 'update'])
+                    ->whereNumber('form')
+                    ->name('update');
+                Route::delete('{form}', [FormsController::class, 'destroy'])
+                    ->whereNumber('form')
+                    ->name('destroy');
+                Route::get('{form}/submissions', [FormsController::class, 'submissions'])
+                    ->whereNumber('form')
+                    ->name('submissions');
+                Route::get('{form}/submissions.csv', [FormsController::class, 'submissionsCsv'])
+                    ->whereNumber('form')
+                    ->name('submissions-csv');
+            });
+
+            // Redirects + 404 log
+            Route::get('redirects', [RedirectsController::class, 'index'])
+                ->name('redirects.index');
+            Route::post('redirects', [RedirectsController::class, 'store'])
+                ->name('redirects.store');
+            Route::patch('redirects/{redirect}', [RedirectsController::class, 'update'])
+                ->whereNumber('redirect')
+                ->name('redirects.update');
+            Route::delete('redirects/{redirect}', [RedirectsController::class, 'destroy'])
+                ->whereNumber('redirect')
+                ->name('redirects.destroy');
+            Route::post('redirects/from-404/{id}', [RedirectsController::class, 'convertNotFound'])
+                ->whereNumber('id')
+                ->name('redirects.from-404');
+
+            // Media library
+            Route::get('media', [MediaController::class, 'index'])
+                ->name('media.index');
+            Route::post('media', [MediaController::class, 'store'])
+                ->name('media.store');
+            Route::patch('media/{media_asset}', [MediaController::class, 'update'])
+                ->whereNumber('media_asset')
+                ->name('media.update');
+            Route::delete('media/{media_asset}', [MediaController::class, 'destroy'])
+                ->whereNumber('media_asset')
+                ->name('media.destroy');
+        });
     });
 
 // Stop impersonation — gated only on `auth`. The current request's auth user

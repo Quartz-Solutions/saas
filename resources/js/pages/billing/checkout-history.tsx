@@ -113,7 +113,7 @@ export default function BillingCheckoutHistory({ sessions }: Props) {
         <>
             <Head title="Checkout history" />
 
-            <div className="flex h-full flex-1 flex-col gap-6 overflow-x-auto">
+            <div className="flex h-full flex-1 flex-col gap-6 overflow-x-auto p-4 md:p-6">
                 <Heading
                     title="Checkout history"
                     description="Every checkout you've started — in-progress, completed, or abandoned."
@@ -143,6 +143,7 @@ BillingCheckoutHistory.layout = ({
     currentTenant: { slug: string; name: string } | null;
 }) => {
     const slug = currentTenant?.slug ?? '';
+
     return {
         breadcrumbs: [
             { title: currentTenant?.name ?? 'Tenant', href: tenantRoutes.dashboard({ tenantSlug: slug }) },

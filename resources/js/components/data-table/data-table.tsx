@@ -128,12 +128,15 @@ export function DataTable<T extends object>({
             if (typeof rowKey === 'function') {
                 return rowKey(row);
             }
+
             return row[rowKey] as string | number;
         }
+
         // Fallback to 'id' if it exists on the row
         if ('id' in row && row.id !== undefined) {
             return row.id as string | number;
         }
+
         return index;
     };
 
@@ -173,8 +176,14 @@ export function DataTable<T extends object>({
     // like row-select checkboxes and should always render regardless of what's
     // in the visibility set.
     const isNonToggleable = (col: DataTableColumn<T>): boolean => {
-        if (!col.header) return true;
-        if (typeof col.header === 'function') return true;
+        if (!col.header) {
+return true;
+}
+
+        if (typeof col.header === 'function') {
+return true;
+}
+
         return col.header.trim() === '';
     };
 
@@ -203,7 +212,10 @@ export function DataTable<T extends object>({
 
     // On mount, sync persisted filters with server if they differ from URL params
     useEffect(() => {
-        if (!tableId || !persistPreferences || hasInitializedRef.current) return;
+        if (!tableId || !persistPreferences || hasInitializedRef.current) {
+return;
+}
+
         hasInitializedRef.current = true;
 
         const safePersistedFilters = persistedFilters || {};
@@ -221,6 +233,7 @@ export function DataTable<T extends object>({
             if (!filtersMatch && onFilter) {
                 onFilter(safePersistedFilters);
             }
+
             if (!searchMatch && onSearch) {
                 onSearch(safePersistedSearch);
             }
@@ -229,7 +242,10 @@ export function DataTable<T extends object>({
 
     const handleSort = (columnKey: string) => {
         const column = columns.find((col) => col.key === columnKey);
-        if (!column?.sortable) return;
+
+        if (!column?.sortable) {
+return;
+}
 
         const newDirection =
             sortColumn === columnKey && sortDirection === 'asc' ? 'desc' : 'asc';
@@ -242,15 +258,18 @@ export function DataTable<T extends object>({
         if (tableId && persistPreferences) {
             setPersistedFilters(newFilters);
         }
+
         onFilter?.(newFilters);
     };
 
     const handleClearFilter = (filterKey: string) => {
         const newFilters = { ...activeFilters };
         delete newFilters[filterKey];
+
         if (tableId && persistPreferences) {
             setPersistedFilters(newFilters);
         }
+
         onFilter?.(newFilters);
     };
 
@@ -259,6 +278,7 @@ export function DataTable<T extends object>({
             setPersistedFilters({});
             setPersistedSearch('');
         }
+
         if (onClearAll) {
             onClearAll();
         } else {
@@ -271,6 +291,7 @@ export function DataTable<T extends object>({
         if (tableId && persistPreferences) {
             setPersistedSearch(query);
         }
+
         onSearch?.(query);
     };
 
@@ -311,9 +332,13 @@ export function DataTable<T extends object>({
                     )}
                     {Object.entries(activeFilters).map(([key, value]) => {
                         const filter = filters.find((f) => f.key === key);
-                        if (!filter || !value) return null;
+
+                        if (!filter || !value) {
+return null;
+}
 
                         let displayValue = value;
+
                         if (filter.type === 'async-select') {
                             displayValue = asyncFilterLabels[key] || value;
                         } else if (filter.type === 'select' && filter.options) {
@@ -330,6 +355,7 @@ export function DataTable<T extends object>({
                         } else if (filter.type === 'range' && value.includes('|')) {
                             const [min, max] = value.split('|');
                             const formatVal = filter.formatValue || ((v: number) => v.toString());
+
                             if (min && max) {
                                 displayValue = `${formatVal(Number(min))} - ${formatVal(Number(max))}`;
                             } else if (min) {

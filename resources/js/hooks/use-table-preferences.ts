@@ -10,11 +10,15 @@ const COOKIE_MAX_AGE = 60 * 60 * 24 * 365; // 1 year
 const DEBOUNCE_MS = 1000;
 
 function getCookie(name: string): string | null {
-    if (typeof document === 'undefined') return null;
+    if (typeof document === 'undefined') {
+return null;
+}
 
     const cookies = document.cookie.split(';');
+
     for (const cookie of cookies) {
         const [cookieName, cookieValue] = cookie.trim().split('=');
+
         if (cookieName === name) {
             try {
                 return decodeURIComponent(cookieValue);
@@ -23,11 +27,14 @@ function getCookie(name: string): string | null {
             }
         }
     }
+
     return null;
 }
 
 function setCookie(name: string, value: string): void {
-    if (typeof document === 'undefined') return;
+    if (typeof document === 'undefined') {
+return;
+}
 
     document.cookie = `${name}=${encodeURIComponent(value)}; path=/; max-age=${COOKIE_MAX_AGE}; SameSite=Lax`;
 }
@@ -36,7 +43,9 @@ function getStoredPreferences(tableId: string): Partial<TablePreferences> | null
     const cookieName = `datatable_${tableId}`;
     const stored = getCookie(cookieName);
 
-    if (!stored) return null;
+    if (!stored) {
+return null;
+}
 
     try {
         return JSON.parse(stored) as Partial<TablePreferences>;
@@ -74,8 +83,13 @@ async function loadFromApi(tableId: string): Promise<Partial<TablePreferences> |
             headers: { 'X-Requested-With': 'XMLHttpRequest' },
             credentials: 'same-origin',
         });
-        if (!response.ok) return null;
+
+        if (!response.ok) {
+return null;
+}
+
         const json = await response.json();
+
         return json.data ?? null;
     } catch {
         return null;
@@ -130,10 +144,15 @@ export function useTablePreferences({
 
     const resolveStoredColumns = useCallback(
         (stored: Partial<TablePreferences>): Set<string> | null => {
-            if (!stored?.visibleColumns || !Array.isArray(stored.visibleColumns)) return null;
+            if (!stored?.visibleColumns || !Array.isArray(stored.visibleColumns)) {
+return null;
+}
 
             const validColumns = stored.visibleColumns.filter((key) => allColumnKeys.includes(key));
-            if (validColumns.length === 0) return null;
+
+            if (validColumns.length === 0) {
+return null;
+}
 
             return new Set(validColumns);
         },
@@ -143,48 +162,65 @@ export function useTablePreferences({
     const [visibleColumns, setVisibleColumns] = useState<Set<string>>(() => {
         if (persistPreferences && tableId) {
             const stored = getStoredPreferences(tableId);
+
             if (stored) {
                 const resolved = resolveStoredColumns(stored);
-                if (resolved) return resolved;
+
+                if (resolved) {
+return resolved;
+}
             }
         }
+
         return getDefaultVisibleColumns();
     });
 
     const [filters, setFiltersState] = useState<Record<string, string>>(() => {
         if (persistPreferences && tableId) {
             const stored = getStoredPreferences(tableId);
+
             if (stored?.filters && typeof stored.filters === 'object') {
                 return { ...initialFilters, ...stored.filters };
             }
         }
+
         return initialFilters;
     });
 
     const [search, setSearchState] = useState<string>(() => {
         if (persistPreferences && tableId) {
             const stored = getStoredPreferences(tableId);
+
             if (typeof stored?.search === 'string') {
                 return stored.search;
             }
         }
+
         return initialSearch;
     });
 
     useEffect(() => {
-        if (!persistPreferences || !tableId || apiLoadAttempted.current) return;
+        if (!persistPreferences || !tableId || apiLoadAttempted.current) {
+return;
+}
+
         apiLoadAttempted.current = true;
 
         loadFromApi(tableId).then((apiData) => {
-            if (!apiData) return;
+            if (!apiData) {
+return;
+}
 
             const resolved = resolveStoredColumns(apiData);
+
             if (resolved) {
                 setVisibleColumns(resolved);
             }
+
             if (apiData.filters && typeof apiData.filters === 'object') {
                 setFiltersState((prev) => ({ ...prev, ...apiData.filters }));
             }
+
             if (typeof apiData.search === 'string') {
                 setSearchState(apiData.search);
             }
@@ -194,12 +230,23 @@ export function useTablePreferences({
     }, [persistPreferences, tableId, resolveStoredColumns]);
 
     useEffect(() => {
-        if (!persistPreferences || !tableId || !userHasChanged.current) return;
+        if (!persistPreferences || !tableId || !userHasChanged.current) {
+return;
+}
 
         const prefs: Partial<TablePreferences> = {};
-        if (managesColumns) prefs.visibleColumns = Array.from(visibleColumns);
-        if (managesFilters) prefs.filters = filters;
-        if (managesSearch) prefs.search = search;
+
+        if (managesColumns) {
+prefs.visibleColumns = Array.from(visibleColumns);
+}
+
+        if (managesFilters) {
+prefs.filters = filters;
+}
+
+        if (managesSearch) {
+prefs.search = search;
+}
 
         const existing = getStoredPreferences(tableId) ?? {};
         storePreferences(tableId, { ...existing, ...prefs });
@@ -207,6 +254,7 @@ export function useTablePreferences({
         if (debounceTimer.current) {
             clearTimeout(debounceTimer.current);
         }
+
         debounceTimer.current = setTimeout(() => {
             saveToApi(tableId, prefs);
         }, DEBOUNCE_MS);
@@ -231,6 +279,7 @@ export function useTablePreferences({
         userHasChanged.current = true;
         setVisibleColumns((prev) => {
             const next = new Set(prev);
+
             if (next.has(columnKey)) {
                 if (next.size > 1) {
                     next.delete(columnKey);
@@ -238,6 +287,7 @@ export function useTablePreferences({
             } else {
                 next.add(columnKey);
             }
+
             return next;
         });
     }, []);
@@ -247,6 +297,7 @@ export function useTablePreferences({
         setVisibleColumns((prev) => {
             const next = new Set(prev);
             next.add(columnKey);
+
             return next;
         });
     }, []);
@@ -254,9 +305,13 @@ export function useTablePreferences({
     const hideColumn = useCallback((columnKey: string) => {
         userHasChanged.current = true;
         setVisibleColumns((prev) => {
-            if (prev.size <= 1) return prev;
+            if (prev.size <= 1) {
+return prev;
+}
+
             const next = new Set(prev);
             next.delete(columnKey);
+
             return next;
         });
     }, []);

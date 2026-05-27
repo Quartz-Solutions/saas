@@ -1,6 +1,5 @@
 import { Settings2 } from 'lucide-react';
 
-import type { DataTableColumn } from './data-table';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -11,6 +10,7 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import type { DataTableColumn } from './data-table';
 
 
 interface DataTableColumnToggleProps<T> {
@@ -30,8 +30,14 @@ export function DataTableColumnToggle<T>({
 }: DataTableColumnToggleProps<T>) {
     // Filter out columns without headers (like action columns) or with function headers (like select columns)
     const toggleableColumns = columns.filter((col) => {
-        if (!col.header) return false;
-        if (typeof col.header === 'function') return false;
+        if (!col.header) {
+return false;
+}
+
+        if (typeof col.header === 'function') {
+return false;
+}
+
         return col.header.trim() !== '';
     });
     const hiddenCount = toggleableColumns.filter((col) => !visibleColumns.has(col.key)).length;

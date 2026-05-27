@@ -35,3 +35,15 @@ Schedule::job(new ExpireStaleCheckouts)
     ->everyFiveMinutes()
     ->onOneServer()
     ->name('expire-stale-checkouts');
+
+/*
+|--------------------------------------------------------------------------
+| Publish scheduled CMS pages
+|--------------------------------------------------------------------------
+| Flips draft → published when `publish_at` rolls over, and published →
+| archived when `unpublish_at` rolls over. M11.
+*/
+Schedule::command('cms:publish-scheduled')
+    ->everyMinute()
+    ->onOneServer()
+    ->name('cms-publish-scheduled');

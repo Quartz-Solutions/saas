@@ -110,6 +110,10 @@ Route::middleware(['auth', 'verified'])
         Route::post('tenants', [TenantsController::class, 'store'])
             ->name('tenants.store');
 
+        Route::delete('tenants/{tenant}', [TenantsController::class, 'destroyFromAccount'])
+            ->whereNumber('tenant')
+            ->name('tenants.destroy');
+
         Route::get('invitations/{token}', [TenantInvitationsController::class, 'accept'])
             ->name('invitations.accept');
     });

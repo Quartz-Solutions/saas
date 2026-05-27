@@ -1,5 +1,6 @@
 import { Head, Link, useForm } from '@inertiajs/react';
 import { ArrowLeft, ArrowRight, Check, CreditCard, ExternalLink, Loader2 } from 'lucide-react';
+import CheckoutNextStep from '@/components/checkout/checkout-next-step';
 import Heading from '@/components/heading';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -11,7 +12,6 @@ import {
     CardHeader,
     CardTitle,
 } from '@/components/ui/card';
-import CheckoutNextStep from '@/components/checkout/checkout-next-step';
 
 type Plan = {
     slug: string;

@@ -5,6 +5,8 @@ namespace App\Http\Middleware;
 use App\Support\Tenancy\TenantResolver;
 use Closure;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
@@ -43,6 +45,20 @@ class SetCurrentTenant
                 ) {
                     $user->forceFill(['current_tenant_id' => $tenant->id])->save();
                 }
+
+                // Bump the membership's last_seen_at on every tenant-scoped
+                // request. Throttle to once every 5 minutes per user/tenant
+                // pair so we don't write on every navigation.
+                if (! $request->isMethod('OPTIONS')) {
+                    DB::table('tenant_memberships')
+                        ->where('user_id', $user->id)
+                        ->where('tenant_id', $tenant->id)
+                        ->where(function ($q) {
+                            $q->whereNull('last_seen_at')
+                                ->orWhere('last_seen_at', '<', now()->subMinutes(5));
+                        })
+                        ->update(['last_seen_at' => now()]);
+                }
             }
 
             $authUser = $request->user();
@@ -56,6 +72,9 @@ class SetCurrentTenant
                     'slug' => $tenant->slug,
                     'name' => $tenant->name,
                     'logo_path' => $tenant->logo_path,
+                    'logo_url' => $tenant->logo_path
+                        ? Storage::disk('public')->url($tenant->logo_path)
+                        : null,
                     'timezone' => $tenant->timezone,
                     'currency' => $tenant->currency,
                     'locale' => $tenant->locale,

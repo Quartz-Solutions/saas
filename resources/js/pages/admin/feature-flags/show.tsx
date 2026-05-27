@@ -1,6 +1,7 @@
 import { Form, Head, Link } from '@inertiajs/react';
 import { ArrowLeft, MoreHorizontal, Plus } from 'lucide-react';
 import { useState } from 'react';
+import FeatureFlagOverridesController from '@/actions/App/Http/Controllers/Admin/FeatureFlagOverridesController';
 import Heading from '@/components/heading';
 import InputError from '@/components/input-error';
 import {
@@ -41,7 +42,6 @@ import { Spinner } from '@/components/ui/spinner';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { formatDateTime } from '@/lib/utils';
-import FeatureFlagOverridesController from '@/actions/App/Http/Controllers/Admin/FeatureFlagOverridesController';
 import { index as featureFlagsIndex } from '@/routes/admin/feature-flags';
 
 type Flag = {

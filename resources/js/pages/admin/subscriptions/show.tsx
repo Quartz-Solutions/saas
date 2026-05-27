@@ -1,7 +1,6 @@
 import { Head, Link, router } from '@inertiajs/react';
 import { ArrowLeft, ExternalLink, RotateCw } from 'lucide-react';
 import Heading from '@/components/heading';
-import ActionsPanel from './_actions-panel';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -15,6 +14,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { formatDateTime } from '@/lib/utils';
 import { index as subsIndex } from '@/routes/admin/subscriptions';
 import { show as tenantsShow } from '@/routes/admin/tenants';
+import ActionsPanel from './_actions-panel';
 
 type Subscription = {
     id: number;

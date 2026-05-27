@@ -1,6 +1,5 @@
 import { Link, router, usePage } from '@inertiajs/react';
 import { Building2, Check, ChevronsUpDown, Plus } from 'lucide-react';
-import { useEffect, useState } from 'react';
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -21,49 +20,24 @@ type TenantOption = {
 };
 
 type Props = {
-    /** Fallback list — when omitted the switcher fetches `/account/tenants?for=switcher` lazily. */
+    /** Optional override — when omitted the switcher reads `auth.tenants` from shared Inertia props. */
     tenants?: TenantOption[];
 };
 
 export function TenantSwitcher({ tenants: tenantsProp }: Props) {
     const { currentTenant, auth } = usePage<{
         currentTenant: { id: number; slug: string; name: string } | null;
-        auth: { user: { id: number; name: string } | null };
+        auth: {
+            user: { id: number; name: string } | null;
+            tenants?: TenantOption[];
+        };
     }>().props;
 
-    const [tenants, setTenants] = useState<TenantOption[]>(tenantsProp ?? []);
-    const [loaded, setLoaded] = useState(tenantsProp !== undefined);
-
-    useEffect(() => {
-        if (loaded || !auth.user) {
-return;
-}
-
-        // Lazy-fetch the user's tenants when the menu first opens. For v0 we
-        // reuse the `/account/tenants` Inertia endpoint — it ships exactly the
-        // shape we need.
-        fetch(accountTenants().url, {
-            headers: { 'X-Inertia': 'true', Accept: 'application/json' },
-        })
-            .then((r) => (r.ok ? r.json() : null))
-            .then((json) => {
-                const list =
-                    json?.props?.tenants ?? (Array.isArray(json) ? json : []);
-                setTenants(
-                    (list as Array<{ id: number; slug: string; name: string }>).map((t) => ({
-                        id: t.id,
-                        slug: t.slug,
-                        name: t.name,
-                    })),
-                );
-                setLoaded(true);
-            })
-            .catch(() => setLoaded(true));
-    }, [auth.user, loaded]);
-
     if (!auth.user) {
-return null;
-}
+        return null;
+    }
+
+    const tenants = tenantsProp ?? auth.tenants ?? [];
 
     const handleSwitch = (slug: string) => {
         router.post(tenantRoutes.switch({ tenant: slug }).url);

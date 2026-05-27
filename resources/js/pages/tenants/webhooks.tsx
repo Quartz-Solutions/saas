@@ -2,6 +2,7 @@ import { Form, Head, usePage } from '@inertiajs/react';
 import { Copy, MoreHorizontal, Plus, Webhook } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
+import WebhooksController from '@/actions/App/Http/Controllers/Webhooks/WebhooksController';
 import Heading from '@/components/heading';
 import InputError from '@/components/input-error';
 import {
@@ -45,7 +46,6 @@ import {
 } from '@/components/ui/table';
 import { formatDateTime } from '@/lib/utils';
 import tenantRoutes from '@/routes/tenants';
-import WebhooksController from '@/actions/App/Http/Controllers/Webhooks/WebhooksController';
 
 type WebhookEndpoint = {
     id: number;

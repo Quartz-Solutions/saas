@@ -2,9 +2,8 @@ import axios from 'axios';
 import { format, parseISO } from 'date-fns';
 import { Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { type DateRange } from 'react-day-picker';
+import type {DateRange} from 'react-day-picker';
 
-import { type DataTableFilter } from './data-table';
 
 import { Button } from '@/components/ui/button';
 import { DateRangePicker } from '@/components/ui/date-range-picker';
@@ -17,6 +16,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/select';
+import type {DataTableFilter} from './data-table';
 
 
 function AsyncSelectFilter({
@@ -44,6 +44,7 @@ function AsyncSelectFilter({
 
     const fetchOptions = useCallback(async (query: string) => {
         setLoading(true);
+
         try {
             const response = await axios.get<{ data: { label: string; value: string }[] }>(searchUrl, {
                 params: { search: query },
@@ -60,6 +61,7 @@ function AsyncSelectFilter({
     const handleOpen = () => {
         const next = !open;
         setOpen(next);
+
         if (next && !hasFetchedRef.current) {
             hasFetchedRef.current = true;
             fetchOptions('');
@@ -68,7 +70,11 @@ function AsyncSelectFilter({
 
     const handleSearchChange = (query: string) => {
         setSearch(query);
-        if (debounceRef.current) clearTimeout(debounceRef.current);
+
+        if (debounceRef.current) {
+clearTimeout(debounceRef.current);
+}
+
         debounceRef.current = setTimeout(() => fetchOptions(query), 300);
     };
 
@@ -93,6 +99,7 @@ function AsyncSelectFilter({
             }
         };
         document.addEventListener('mousedown', handleClickOutside);
+
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
 
@@ -109,7 +116,9 @@ function AsyncSelectFilter({
                     <button
                         type="button"
                         className="ml-1 text-muted-foreground hover:text-foreground"
-                        onClick={(e) => { e.stopPropagation(); handleClear(); }}
+                        onClick={(e) => {
+ e.stopPropagation(); handleClear(); 
+}}
                     >
                         x
                     </button>
@@ -182,8 +191,12 @@ export function DataTableFilters({
 
     // Convert string to DateRange for daterange filters
     const parseDateRangeValue = (value: string | undefined): DateRange | undefined => {
-        if (!value) return undefined;
+        if (!value) {
+return undefined;
+}
+
         const [fromStr, toStr] = value.split('|');
+
         return {
             from: fromStr ? parseISO(fromStr) : undefined,
             to: toStr ? parseISO(toStr) : undefined,
@@ -192,9 +205,13 @@ export function DataTableFilters({
 
     // Convert DateRange to string for storage
     const formatDateRangeValue = (range: DateRange | undefined): string => {
-        if (!range?.from) return '';
+        if (!range?.from) {
+return '';
+}
+
         const from = format(range.from, 'yyyy-MM-dd');
         const to = range.to ? format(range.to, 'yyyy-MM-dd') : '';
+
         return to ? `${from}|${to}` : from;
     };
 
@@ -208,8 +225,12 @@ export function DataTableFilters({
 
     // Parse range value from string "min|max"
     const parseRangeValue = (value: string | undefined): { from: string; to: string } => {
-        if (!value) return { from: '', to: '' };
+        if (!value) {
+return { from: '', to: '' };
+}
+
         const [fromVal, toVal] = value.split('|');
+
         return {
             from: fromVal || '',
             to: toVal || '',
@@ -226,6 +247,7 @@ export function DataTableFilters({
 
         // Format as "from|to", handling empty values
         let value = '';
+
         if (newRange.from || newRange.to) {
             value = `${newRange.from}|${newRange.to}`;
         }
@@ -243,6 +265,7 @@ export function DataTableFilters({
                 if (value !== '' && value !== null && value !== undefined) {
                     acc[key] = value;
                 }
+
                 return acc;
             },
             {} as Record<string, string>
@@ -332,6 +355,7 @@ export function DataTableFilters({
                                 value={localFilters[filter.key] || ''}
                                 onChange={(value, label) => {
                                     handleFilterValueChange(filter.key, value);
+
                                     if (onAsyncLabelChange) {
                                         onAsyncLabelChange(filter.key, label);
                                     }

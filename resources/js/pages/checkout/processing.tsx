@@ -29,6 +29,7 @@ export default function CheckoutProcessing({ session, pollUrl }: Props) {
                     status: string;
                     tenant_slug: string | null;
                 }>(pollUrl);
+
                 if (data.status === 'completed' && data.tenant_slug) {
                     clearInterval(timer);
                     clearInterval(secondsTimer);

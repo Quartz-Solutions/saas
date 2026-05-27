@@ -15,11 +15,13 @@ import {
     Mail,
     Plug,
     Save,
-    XCircle,
-    type LucideIcon,
+    XCircle
+    
 } from 'lucide-react';
+import type {LucideIcon} from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
+import SettingsController from '@/actions/App/Http/Controllers/Admin/SettingsController';
 import Heading from '@/components/heading';
 import InputError from '@/components/input-error';
 import { Button } from '@/components/ui/button';
@@ -43,7 +45,6 @@ import {
 import { Spinner } from '@/components/ui/spinner';
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import SettingsController from '@/actions/App/Http/Controllers/Admin/SettingsController';
 
 type FieldType = 'string' | 'secret' | 'email' | 'url' | 'int' | 'bool' | 'select';
 
@@ -100,6 +101,7 @@ export default function AdminSettings({ groups }: Props) {
                     {groupKeys.map((key) => {
                         const group = groups[key];
                         const Icon = group.icon ? ICON_MAP[group.icon] : null;
+
                         return (
                             <TabsTrigger key={key} value={key} className="gap-2">
                                 {Icon ? <Icon className="size-4" /> : null}
@@ -126,10 +128,12 @@ function GroupForm({ group }: { group: Group }) {
 
     const runTest = async () => {
         setTesting(true);
+
         try {
             const res = await axios.post<{ ok: boolean; message: string }>(
                 `/admin/settings/${group.key}/test`,
             );
+
             if (res.data.ok) {
                 toast.success(res.data.message, {
                     icon: <CheckCircle2 className="size-4 text-emerald-500" />,

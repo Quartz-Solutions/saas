@@ -31,26 +31,72 @@ class TenantsController extends Controller
     {
         $user = $request->user();
 
-        $tenants = $user
-            ? $user->tenants()
-                ->withCount('memberships')
-                ->orderBy('name')
-                ->get()
-                ->map(fn (Tenant $t) => [
-                    'id' => $t->id,
-                    'slug' => $t->slug,
-                    'name' => $t->name,
-                    'role' => $t->owner_id === $user->id ? 'Owner' : 'Member',
-                    'status' => $t->status,
-                    'memberships_count' => $t->memberships_count,
-                    'created_at' => $t->created_at?->toIso8601String(),
-                ])
-                ->values()
-                ->all()
-            : [];
+        if ($user === null) {
+            return Inertia::render('account/tenants', ['tenants' => []]);
+        }
+
+        $tenants = $user->tenants()
+            ->withCount('memberships')
+            ->orderBy('name')
+            ->get();
+
+        $tenantIds = $tenants->pluck('id')->all();
+
+        // Active subscription per tenant (any non-terminal status).
+        $activeSubs = \App\Models\Subscription::query()
+            ->whereIn('tenant_id', $tenantIds)
+            ->whereIn('status', ['trialing', 'active', 'past_due'])
+            ->with('plan:id,slug,name,price_cents,currency,billing_period')
+            ->get()
+            ->keyBy('tenant_id');
+
+        // Owner-only: pending invitations count per owned tenant.
+        $ownedIds = $tenants->where('owner_id', $user->id)->pluck('id')->all();
+        $pendingInvites = \App\Models\TenantInvitation::query()
+            ->whereIn('tenant_id', $ownedIds)
+            ->whereNull('accepted_at')
+            ->whereNull('revoked_at')
+            ->selectRaw('tenant_id, COUNT(*) as c')
+            ->groupBy('tenant_id')
+            ->pluck('c', 'tenant_id');
+
+        $payload = $tenants->map(function (Tenant $t) use ($user, $activeSubs, $pendingInvites) {
+            $isOwner = $t->owner_id === $user->id;
+            $sub = $activeSubs->get($t->id);
+            /** @var \App\Models\TenantMembership|null $pivot */
+            $pivot = $t->pivot ?? null;
+
+            return [
+                'id' => $t->id,
+                'slug' => $t->slug,
+                'name' => $t->name,
+                'logo_path' => $t->logo_path,
+                'logo_url' => $t->logo_path
+                    ? \Illuminate\Support\Facades\Storage::disk('public')->url($t->logo_path)
+                    : null,
+                'role' => $isOwner ? 'Owner' : 'Member',
+                'status' => $t->status,
+                'currency' => $t->currency,
+                'trial_ends_at' => $t->trial_ends_at?->toIso8601String(),
+                'memberships_count' => (int) $t->memberships_count,
+                'created_at' => $t->created_at?->toIso8601String(),
+                'last_seen_at' => $pivot?->last_seen_at?->toIso8601String(),
+                'plan' => $sub?->plan ? [
+                    'slug' => $sub->plan->slug,
+                    'name' => $sub->plan->name,
+                    'price_cents' => (int) $sub->plan->price_cents,
+                    'currency' => $sub->plan->currency,
+                    'billing_period' => $sub->plan->billing_period,
+                    'subscription_status' => $sub->status,
+                ] : null,
+                'pending_invites_count' => $isOwner
+                    ? (int) ($pendingInvites[$t->id] ?? 0)
+                    : null,
+            ];
+        })->values()->all();
 
         return Inertia::render('account/tenants', [
-            'tenants' => $tenants,
+            'tenants' => $payload,
         ]);
     }
 
@@ -135,6 +181,21 @@ class TenantsController extends Controller
     public function destroy(TenantDestroyRequest $request): RedirectResponse
     {
         $tenant = $this->currentTenant();
+        $this->service->softDelete($tenant);
+
+        Inertia::flash('toast', ['type' => 'success', 'message' => __('Tenant scheduled for deletion.')]);
+
+        return to_route('account.tenants.index');
+    }
+
+    /**
+     * Personal-scope soft-delete — invoked from /account/tenants card menus
+     * without first switching into the tenant context. Owner-only.
+     */
+    public function destroyFromAccount(Request $request, Tenant $tenant): RedirectResponse
+    {
+        abort_unless($tenant->owner_id === $request->user()?->id, 403);
+
         $this->service->softDelete($tenant);
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Tenant scheduled for deletion.')]);
