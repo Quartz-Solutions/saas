@@ -1,430 +1,303 @@
-# Laravel + React Starter Kit
+<!--
+    Quartz — Multi-tenant SaaS boilerplate for Laravel + Inertia + React.
+    Repo: github.com/obaidaattaee/quartz-saas
+-->
 
-## Introduction
+<p align="center">
+  <img src=".github/assets/hero.png" alt="Quartz — multi-tenant SaaS boilerplate" />
+</p>
 
-Our React starter kit provides a robust, modern starting point for building Laravel applications with a React frontend using [Inertia](https://inertiajs.com).
+<h1 align="center">Quartz</h1>
 
-Inertia allows you to build modern, single-page React applications using classic server-side routing and controllers. This lets you enjoy the frontend power of React combined with the incredible backend productivity of Laravel and lightning-fast Vite compilation.
+<p align="center">
+  <strong>The multi-tenant SaaS boilerplate that already speaks payments your region understands.</strong>
+  <br/>
+  Laravel 13 · Inertia 3 · React 19 · TypeScript · Tailwind 4 · Postgres 16
+</p>
 
-This React starter kit utilizes React 19, TypeScript, Tailwind, and the [shadcn/ui](https://ui.shadcn.com) and [radix-ui](https://www.radix-ui.com) component libraries.
+<p align="center">
+  <a href="https://github.com/obaidaattaee/quartz-saas/actions"><img src="https://img.shields.io/github/actions/workflow/status/obaidaattaee/quartz-saas/ci.yml?label=tests&style=flat-square" alt="Tests"></a>
+  <img src="https://img.shields.io/badge/tests-577%20passing-success?style=flat-square" alt="577 tests passing">
+  <img src="https://img.shields.io/badge/license-MIT-blue?style=flat-square" alt="MIT licensed">
+  <img src="https://img.shields.io/badge/PRs-welcome-brightgreen?style=flat-square" alt="PRs welcome">
+  <img src="https://img.shields.io/badge/Laravel-13.x-FF2D20?style=flat-square&logo=laravel" alt="Laravel 13">
+  <img src="https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react" alt="React 19">
+</p>
 
-## Official Documentation
-
-Documentation for all Laravel starter kits can be found on the [Laravel website](https://laravel.com/docs/starter-kits).
-
-## Contributing
-
-Thank you for considering contributing to our starter kit! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
-
-All contributions to the Starter Kits from now on should be made through [Maestro](https://github.com/laravel/maestro).
-
-## Code of Conduct
-
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
-
-## License
-
-The Laravel + React starter kit is open-sourced software licensed under the MIT license.
-
----
-
-# Deployment
-
-The boilerplate ships with first-party deploy paths for four targets. Pick the one that matches your operational comfort level — they are listed easiest to most flexible.
-
-| Target                       | Best for                                                  | TLS         | Managed PG/Redis |
-| ---------------------------- | --------------------------------------------------------- | ----------- | ---------------- |
-| Fly.io                       | Solo founders, edge deploys, fastest path to TLS-on-Apex  | Auto        | Fly Postgres add-on |
-| Railway                      | Teams that want a Heroku-style dashboard + git push       | Auto        | Railway plugins  |
-| DigitalOcean App Platform    | Predictable monthly bill, managed everything              | Auto        | DO managed DB    |
-| Self-hosted Docker           | Full control, on-prem, EU sovereignty, single fat box     | nginx-proxy + acme | Containers in same compose |
-
-Every target needs the same Laravel env vars at minimum:
-
-```env
-APP_KEY=                  # php artisan key:generate --show
-APP_URL=https://yourdomain.com
-APP_ENV=production
-APP_DEBUG=false
-DB_CONNECTION=pgsql
-DB_HOST=...
-DB_PORT=5432
-DB_DATABASE=...
-DB_USERNAME=...
-DB_PASSWORD=...
-REDIS_HOST=...
-REDIS_PORT=6379
-SESSION_DRIVER=redis
-CACHE_STORE=redis
-QUEUE_CONNECTION=redis
-MAIL_MAILER=smtp
-MAIL_HOST=...
-MAIL_PORT=587
-MAIL_USERNAME=...
-MAIL_PASSWORD=...
-MAIL_FROM_ADDRESS=hello@yourdomain.com
-# Optional but recommended:
-SENTRY_DSN=               # https://sentry.io/... — env-gated, off when blank
-BACKUP_BUCKET=            # s3://<bucket> for the daily pg_dump (off when blank)
-AWS_ACCESS_KEY_ID=
-AWS_SECRET_ACCESS_KEY=
-AWS_DEFAULT_REGION=us-east-1
-```
+<p align="center">
+  <a href="#-quick-start">Quick start</a> ·
+  <a href="#-features">Features</a> ·
+  <a href="#-tech-stack">Tech stack</a> ·
+  <a href="#-architecture">Architecture</a> ·
+  <a href="#-roadmap">Roadmap</a> ·
+  <a href="#-contributing">Contributing</a>
+</p>
 
 ---
 
-## Fly.io
+## Why Quartz?
 
-Fly.io is the fastest way from `git clone` to a live HTTPS URL with Postgres attached.
+Most Laravel starter kits stop at auth + a dashboard. Real SaaS products need a lot more — and Quartz ships the lot.
 
-### Prereqs
+- **Multi-tenancy** is in the core, not bolted on after launch.
+- **13 payment gateways** across Global, MENA, GCC, and SE-Asia — including the ones Stripe and Paddle don't cover.
+- **Admin scope** with impersonation, audit log, webhook replay, RBAC, and GDPR purge — so support and ops aren't an afterthought.
+- **White-label by default** — drop a logo + name in CMS Globals and your fork looks like *your* product, not a clone of the boilerplate.
+- **~580 feature tests** so you can refactor without holding your breath.
 
-- Install [`flyctl`](https://fly.io/docs/hands-on/install-flyctl/) and `fly auth login`.
-- A payment method on file (Fly's free tier covers small apps, but PG add-on costs ~$1.94/mo for a 1 GB volume).
+Fork it, rename it, ship it.
 
-### First deploy
+## ✨ Features
+
+### Auth & identity
+- Email + password, email verification, password reset, 2FA (TOTP) + recovery codes
+- Magic-link login (passwordless, 15-min signed URL)
+- Social login via Socialite (Google + GitHub out of the box, designed for easy add)
+- Session management (revoke individual or all), login history, force-password-reset gate
+- Account deletion (soft + 30-day purge)
+
+### Multi-tenancy
+- Path-based today (`/t/{slug}/...`); pluggable `TenantResolver` interface ready for subdomain + custom-domain
+- `tenants` + `tenant_memberships` with Owner / Admin / Member roles (Spatie permissions, team-scoped per tenant)
+- Tenant invitations (signed-token email links, public landing for non-users)
+- Tenant switcher, owner transfer, soft-delete with 30-day recovery
+- Per-tenant white-label: custom logo, brand color, preferred payment gateway
+
+### Billing — 13 gateways, one interface
+| Region | Gateways |
+|---|---|
+| **Global** | Stripe · PayPal |
+| **Egypt** | Paymob · Fawry · PayTabs · Geidea |
+| **GCC** | Amazon Payment Services (Payfort) · Telr · HyperPay · MyFatoorah |
+| **Malaysia + SE-Asia** | HitPay · Billplz · iPay88 |
+
+- Polymorphic `PaymentGateway` + `SubscriptionGateway` interfaces — every driver implements the same contract
+- `GatewayRegistry` resolves drivers at boot; no `app(StripeGateway::class)` couplings
+- Per-tenant preferred gateway, pre-selected on the checkout picker
+- Plans + subscriptions + invoices + payments + gateway_customers + webhook_events
+- Dunning (failed-payment retry queue), trial reminders, checkout abandonment reminders
+- Inbound webhook router with signature verification + admin replay UI
+
+### Admin scope (`/admin`)
+- Tenants index + detail (subscription, invoices, payments, audit, login history, outbound webhook deliveries with **retry**)
+- Users admin: suspend, restore, force-password-reset, disable 2FA, revoke sessions/tokens, grant/revoke Super Admin, impersonation, GDPR export
+- Subscriptions + plans + checkout sessions + payment gateways + feature flags
+- Audit log + webhook event replay
+- Runtime app settings (override env vars without a restart)
+
+### Notifications & email
+- 12 events: welcome, email_verification, password_reset, magic_link, 2fa_recovery, tenant_invite, payment_receipt, plan_changed, trial_ending, payment_failed, login_alert, checkout_abandonment_reminder
+- Per-user **preferences matrix** (event × channel)
+- Email + in-app channels enabled; Slack/SMS reserved
+- **Modern email shell** — branded gradient header, rounded card, accent CTA, dark-mode media queries — applies to every Mailable
+
+### CMS (`/admin/cms`)
+- Pages (drag-drop block editor with `cms_page_versions` history)
+- Blog (posts, categories, tags)
+- Globals (brand, header/footer nav, announcement bar, SEO defaults, cookie banner, social, analytics)
+- Reusable collections (features, testimonials, FAQs, logos)
+- Forms + submissions + CSV export, newsletter integration
+- Media library, redirects with 404-log conversion
+- Public marketing surface: landing, pricing, docs, blog, legal, contact, sitemap, robots, OG images
+
+### API & integrations
+- Sanctum (SPA + personal access tokens with abilities)
+- `/api/v1/*` with Scribe-generated docs
+- Outbound webhooks (HMAC-signed, retry with exponential backoff)
+- Per-token rate limiting
+
+### Security & compliance
+- GDPR data export (tenant + user)
+- Encrypted PII at rest (Laravel `encrypted` casts) — `phone` ships encrypted, pattern documented for more fields
+- 30-day soft-delete → hard-purge job for tenants
+- Audit log via model observers (create/update/delete diffs)
+- Login alerts on new device, 2FA recovery-code consumption alert
+- Rate limiting on auth endpoints
+- HTTPS-only cookies, SameSite=Lax, CSRF on all POST routes
+
+### Developer experience
+- **Docker dev stack** — PHP-FPM + nginx + Postgres + Redis in one `docker compose up`
+- **Wayfinder typed routes** — no string URLs in TypeScript
+- Shared `<DataTable<T>>` + `<LocalDataTable<T>>` with server-driven filter/sort/pagination/CSV export
+- Light / dark mode (cookie-based)
+- Command palette (cmd+k)
+- Toast notifications (sonner)
+- Onboarding wizard for new tenants
+- ~580 feature tests covering every controller + service action
+
+## 🚀 Quick start
 
 ```bash
-fly launch --no-deploy
-# - Pick a unique app name (becomes <app>.fly.dev).
-# - Pick a region close to your users (lhr, fra, sin, syd, etc.).
-# - Decline the offer to create a Postgres app for now (we want it managed by fly).
-# - Decline Redis (we'll attach Upstash separately).
-# - Answer "yes" to copy your existing Dockerfile if prompted; otherwise Fly
-#   generates a default one — replace it with our prod Dockerfile (see below).
+# Clone + boot the stack (Postgres 16 + Redis 7 + PHP-FPM + nginx)
+git clone https://github.com/obaidaattaee/quartz-saas.git my-saas
+cd my-saas
+cp .env.example .env
+docker compose up -d
 
-# Replace the Fly-generated Dockerfile with our production image:
-cp docker/prod/Dockerfile Dockerfile
+# Install deps inside the container
+docker compose exec app composer install
+docker compose exec app pnpm install
+docker compose exec app php artisan key:generate
+docker compose exec app php artisan migrate --seed
 
-# Provision Postgres and attach (creates DATABASE_URL secret automatically):
-fly postgres create --name my-saas-db --region lhr --vm-size shared-cpu-1x --volume-size 10
-fly postgres attach --app my-saas my-saas-db
+# Start Vite dev server (HMR on :5173)
+docker compose exec -d app pnpm dev
 
-# Provision Redis via Upstash (Fly has a native integration):
-fly redis create --name my-saas-redis --region lhr
-# Copy the connection URL it prints; set REDIS_HOST/PORT/PASSWORD via secrets below.
-
-# Set secrets. APP_KEY is critical — generate locally first:
-fly secrets set \
-  APP_KEY="base64:$(openssl rand -base64 32)" \
-  APP_URL="https://my-saas.fly.dev" \
-  APP_ENV=production \
-  APP_DEBUG=false \
-  SESSION_DRIVER=redis \
-  CACHE_STORE=redis \
-  QUEUE_CONNECTION=redis \
-  REDIS_HOST=fly-my-saas-redis.upstash.io \
-  REDIS_PORT=6379 \
-  REDIS_PASSWORD=...        \
-  MAIL_MAILER=smtp          \
-  MAIL_HOST=smtp.postmarkapp.com \
-  MAIL_PORT=587             \
-  MAIL_USERNAME=...         \
-  MAIL_PASSWORD=...         \
-  MAIL_FROM_ADDRESS="hello@yourdomain.com"
-
-# Deploy:
-fly deploy
-
-# After first deploy, run migrations + (optional) seed:
-fly ssh console -C "php artisan migrate --force"
-fly ssh console -C "php artisan storage:link"
+# Visit:
+#   http://localhost:8080            — marketing site
+#   http://localhost:8080/login      — log in (seeded super admin)
+#   http://localhost:8080/admin      — super admin scope
 ```
 
-### Gotchas
+Default super admin credentials (seeded via `DatabaseSeeder`):
 
-- **Asset build runs inside the Dockerfile** (`docker/prod/Dockerfile` already does `pnpm install && pnpm build`). Don't try to bake assets at runtime — Fly's filesystem is ephemeral.
-- **Queue + scheduler need separate processes.** Add this to `fly.toml`:
-  ```toml
-  [processes]
-  app = "/usr/bin/supervisord -c /etc/supervisor/conf.d/supervisord.conf"
-  queue = "php artisan queue:work --sleep=3 --tries=3 --max-time=3600"
-  scheduler = "sh -c 'while true; do php artisan schedule:run --verbose --no-interaction; sleep 60; done'"
-  ```
-- **`DATABASE_URL` is set by `fly postgres attach`** but Laravel reads `DB_HOST/DB_DATABASE/...`. Either parse `DATABASE_URL` in `bootstrap/app.php`, or unset it and set the individual `DB_*` secrets explicitly.
-- **Health check** — the default `/up` endpoint is what `docker-compose.prod.yml` and the Fly proxy both probe. Don't remove it.
+| Email | Password |
+|---|---|
+| `super@example.test` | `password` |
 
----
+> [!IMPORTANT]
+> **Do not run `composer`, `php`, `artisan`, `pnpm`, or `psql` on the host.** The dev stack uses container-local vendor + node_modules. Always prefix with `docker compose exec app ...`. See [`CLAUDE.md`](./CLAUDE.md) for the full conventions.
 
-## Railway
+## 🧱 Tech stack
 
-Railway is `git push` deploys with a polished dashboard. Postgres + Redis are first-party plugins.
+**Backend**
+- [Laravel 13](https://laravel.com) · PHP 8.4
+- [Laravel Fortify](https://github.com/laravel/fortify) (auth) · [Laravel Sanctum](https://laravel.com/docs/sanctum) (API tokens)
+- [Spatie Laravel Permission](https://spatie.be/docs/laravel-permission) (team-scoped roles)
+- Postgres 16 · Redis 7 (cache, session, queue)
+- Scribe (API docs) · Sentry (errors) · league/flysystem-aws-s3 (object storage)
 
-### Prereqs
+**Frontend**
+- [Inertia.js 3](https://inertiajs.com) (server-routed React)
+- [React 19](https://react.dev) · TypeScript 5
+- [Tailwind CSS 4](https://tailwindcss.com)
+- [shadcn/ui](https://ui.shadcn.com) (new-york preset) + [Radix UI](https://www.radix-ui.com) primitives
+- [Wayfinder](https://github.com/laravel/wayfinder) (typed routes)
+- [Vite](https://vitejs.dev) (HMR + production bundling)
 
-- A Railway account + GitHub connection.
-- The repo pushed to GitHub (Railway pulls from git).
+**Infra**
+- Docker Compose (dev + prod stacks)
+- Multi-stage Dockerfile (php-fpm + nginx + supervisord)
+- pg_dump → S3 backup script (daily cron)
+- Optional: Fly.io · Railway · DigitalOcean App Platform
 
-### First deploy
+## 🗂️ Architecture
 
-1. **Create a new Railway project** → "Deploy from GitHub repo" → pick this repo.
-2. **Set the builder to Dockerfile** in the service's *Settings → Build* tab, with `docker/prod/Dockerfile` as the path. (Railway's Nixpacks auto-detection will guess wrong for Laravel + Vite — force Dockerfile.)
-3. **Add Postgres**: project → "+ New" → "Database" → "PostgreSQL". Railway exposes `DATABASE_URL`, `PGHOST`, `PGUSER`, `PGPASSWORD`, `PGDATABASE`, `PGPORT` to the app service automatically via reference variables.
-4. **Add Redis**: same flow. Reference vars: `REDISHOST`, `REDISPORT`, `REDISPASSWORD`.
-5. **Set variables on the app service** (dashboard → Variables):
+```
+app/
+├── Http/
+│   ├── Controllers/
+│   │   ├── Admin/            # /admin/* — Super Admin scope
+│   │   ├── API/V1/           # /api/v1/* — Sanctum-protected JSON
+│   │   ├── Auth/             # Magic-link, social, 2FA
+│   │   ├── Billing/          # Plans, invoices, gateway webhooks
+│   │   ├── Checkout/         # Polymorphic checkout funnel
+│   │   ├── Marketing/        # Public landing, docs, blog, forms
+│   │   ├── Settings/         # /settings/* — Per-user
+│   │   └── Tenants/          # /t/{slug}/* — Tenant scope
+│   └── Middleware/           # SetCurrentTenant, EnforcePasswordReset, …
+│
+├── Models/                   # 50+ Eloquent models with #[Fillable]
+├── Notifications/            # Notification classes
+├── Mail/                     # 13 branded Mailables (modern shell)
+├── Jobs/                     # Queued work (deliveries, purges, reminders)
+├── Listeners/                # Event subscribers
+├── Observers/                # Audit log + side effects
+└── Support/                  # Service-layer single seam
+    ├── Admin/                # TenantAdminService, UserAdminService, ImpersonationService
+    ├── Auth/                 # MagicLinkService, LoginHistoryRecorder
+    ├── Billing/              # GatewayRegistry + 13 gateway drivers
+    ├── Cms/                  # GlobalsService, block renderer
+    ├── Notifications/        # NotificationDispatcher (single seam)
+    └── Tenancy/              # TenantResolver, TenantService
 
-   ```
-   APP_KEY=base64:...                   # generate locally with: php artisan key:generate --show
-   APP_URL=https://my-saas.up.railway.app
-   APP_ENV=production
-   APP_DEBUG=false
-   DB_CONNECTION=pgsql
-   DB_HOST=${{Postgres.PGHOST}}
-   DB_PORT=${{Postgres.PGPORT}}
-   DB_DATABASE=${{Postgres.PGDATABASE}}
-   DB_USERNAME=${{Postgres.PGUSER}}
-   DB_PASSWORD=${{Postgres.PGPASSWORD}}
-   REDIS_HOST=${{Redis.REDISHOST}}
-   REDIS_PORT=${{Redis.REDISPORT}}
-   REDIS_PASSWORD=${{Redis.REDISPASSWORD}}
-   SESSION_DRIVER=redis
-   CACHE_STORE=redis
-   QUEUE_CONNECTION=redis
-   MAIL_MAILER=smtp
-   MAIL_HOST=...
-   MAIL_PORT=587
-   MAIL_USERNAME=...
-   MAIL_PASSWORD=...
-   MAIL_FROM_ADDRESS=hello@yourdomain.com
-   ```
-6. **Add the queue + scheduler as separate services** in the same Railway project (reuse the same repo, same Dockerfile, override the start command):
-   - Queue service start command: `php artisan queue:work --sleep=3 --tries=3 --max-time=3600`
-   - Scheduler service start command: `sh -c 'while true; do php artisan schedule:run --verbose --no-interaction; sleep 60; done'`
-7. **Push to main** → Railway auto-deploys. After the first deploy, open a Railway shell on the app service:
-   ```bash
-   railway run --service app php artisan migrate --force
-   railway run --service app php artisan storage:link
-   ```
-
-### Gotchas
-
-- **TCP proxy public URL** is on `*.up.railway.app` by default; add a custom domain in Settings → Domains → "+ Custom Domain" and point a CNAME at the provided target.
-- **`APP_URL` must match the public URL** or Inertia/Wayfinder will generate broken absolute URLs.
-- **Sleep-on-idle plans** will cold-start your container — fine for a side project, set the service to "Always On" for production.
-- **Redis password** — Railway's Redis plugin enables AUTH by default; the `phpredis` driver in this stack reads `REDIS_PASSWORD` automatically.
-
----
-
-## DigitalOcean App Platform
-
-DO App Platform gives you predictable per-component pricing and managed Postgres + Redis under one dashboard.
-
-### Prereqs
-
-- A DigitalOcean account.
-- The repo pushed to GitHub or GitLab.
-
-### App spec
-
-Drop the following at `.do/app.yaml` and run `doctl apps create --spec .do/app.yaml` (install [`doctl`](https://docs.digitalocean.com/reference/doctl/how-to/install/) first), or paste it into the App Platform UI under "Create from app spec".
-
-```yaml
-name: my-saas
-region: nyc
-
-services:
-  - name: web
-    dockerfile_path: docker/prod/Dockerfile
-    github:
-      repo: your-org/my-saas
-      branch: main
-      deploy_on_push: true
-    http_port: 80
-    instance_size_slug: basic-xs
-    instance_count: 1
-    routes:
-      - path: /
-    health_check:
-      http_path: /up
-    envs:
-      - { key: APP_ENV,         value: production }
-      - { key: APP_DEBUG,       value: "false" }
-      - { key: APP_KEY,         value: ${APP_KEY},         type: SECRET }
-      - { key: APP_URL,         value: ${APP_URL} }
-      - { key: SESSION_DRIVER,  value: redis }
-      - { key: CACHE_STORE,     value: redis }
-      - { key: QUEUE_CONNECTION, value: redis }
-      - { key: DB_CONNECTION,   value: pgsql }
-      - { key: DB_HOST,         value: ${db.HOSTNAME} }
-      - { key: DB_PORT,         value: ${db.PORT} }
-      - { key: DB_DATABASE,     value: ${db.DATABASE} }
-      - { key: DB_USERNAME,     value: ${db.USERNAME} }
-      - { key: DB_PASSWORD,     value: ${db.PASSWORD},     type: SECRET }
-      - { key: REDIS_HOST,      value: ${redis.HOSTNAME} }
-      - { key: REDIS_PORT,      value: ${redis.PORT} }
-      - { key: REDIS_PASSWORD,  value: ${redis.PASSWORD},  type: SECRET }
-      - { key: MAIL_MAILER,     value: smtp }
-      - { key: MAIL_HOST,       value: smtp.postmarkapp.com }
-      - { key: MAIL_PORT,       value: "587" }
-      - { key: MAIL_USERNAME,   value: ${MAIL_USERNAME},   type: SECRET }
-      - { key: MAIL_PASSWORD,   value: ${MAIL_PASSWORD},   type: SECRET }
-      - { key: MAIL_FROM_ADDRESS, value: hello@yourdomain.com }
-
-  - name: queue
-    dockerfile_path: docker/prod/Dockerfile
-    github: { repo: your-org/my-saas, branch: main }
-    run_command: php artisan queue:work --sleep=3 --tries=3 --max-time=3600
-    instance_size_slug: basic-xxs
-    envs: *web_envs        # YAML anchor — copy the web envs block here in practice
-
-  - name: scheduler
-    dockerfile_path: docker/prod/Dockerfile
-    github: { repo: your-org/my-saas, branch: main }
-    run_command: sh -c 'while true; do php artisan schedule:run --verbose --no-interaction; sleep 60; done'
-    instance_size_slug: basic-xxs
-    envs: *web_envs
-
-databases:
-  - name: db
-    engine: PG
-    version: "16"
-    production: true
-    cluster_name: my-saas-pg
-
-  - name: redis
-    engine: REDIS
-    version: "7"
-    production: true
-    cluster_name: my-saas-redis
-
-jobs:
-  - name: migrate
-    kind: PRE_DEPLOY
-    dockerfile_path: docker/prod/Dockerfile
-    github: { repo: your-org/my-saas, branch: main }
-    run_command: php artisan migrate --force
-    envs: *web_envs
+resources/js/
+├── app.tsx                   # Layout dispatch by page-name prefix
+├── components/
+│   ├── admin/entity-detail/  # EntityHeader, FactCard, ActivityPanel, …
+│   ├── data-table/           # <DataTable<T>> + <LocalDataTable<T>>
+│   └── ui/                   # shadcn primitives
+├── layouts/                  # AppLayout, AdminLayout, AuthLayout, PublicLayout
+├── pages/                    # Inertia pages, mirror controller folders
+└── routes/                   # Wayfinder-generated typed routes
 ```
 
-### Build/run commands
+**Design principles**
+- **Service-layer single seam** — every cross-cutting mutation goes through ONE canonical service (`TenantAdminService::suspend`, `BillingService::recordPayment`, `NotificationDispatcher::send`). Direct writes outside the service are bugs.
+- **Driver registries** — payment gateways and (future) social providers are pluggable via `Registry` classes; resolve through the registry, never `app(SpecificDriver::class)`.
+- **Migrations are append-only** — once any environment has run a migration, schema changes need a new timestamped one.
+- **Money as integer cents** — `*_cents` columns + a paired `currency`. No floats for currency.
 
-- **Build** — handled inside the Dockerfile (`composer install --no-dev`, `pnpm install --frozen-lockfile`, `pnpm build`).
-- **Run** — the Dockerfile's `CMD` starts supervisord (php-fpm + nginx). The `queue` and `scheduler` components override `run_command` to start their own processes.
+## 📸 Screenshots
 
-### Env vars to set
+> Coming soon. In the meantime — see `agent-os/product/` for product specs that drove the UI.
 
-Mark these as `SECRET` in the dashboard (or `type: SECRET` in the spec):
+## 🗺️ Roadmap
 
-- `APP_KEY` (generate with `php artisan key:generate --show` once locally)
-- `DB_PASSWORD`, `REDIS_PASSWORD` (DO auto-injects via `${db.PASSWORD}` / `${redis.PASSWORD}` references)
-- `MAIL_USERNAME`, `MAIL_PASSWORD`
-- `SENTRY_DSN` (optional)
-- `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `BACKUP_BUCKET` (if you want the daily pg_dump to go to Spaces)
+Quartz is at **v1** as of the latest release. The full multi-phase product plan lives in [`agent-os/product/roadmap.md`](./agent-os/product/roadmap.md). Recent + upcoming highlights:
 
-### Gotchas
+**Shipped**
+- ✅ Auth & identity (Phase 1)
+- ✅ Multi-tenancy (Phase 2)
+- ✅ Billing core + 13 gateway drivers (Phase 3.0–3.4)
+- ✅ Admin scope (Phase 4)
+- ✅ Sanctum API + outbound webhooks (Phase 5)
+- ✅ Notifications + modern email shell (Phase 6)
+- ✅ Marketing site + CMS + docs (Phase 7)
+- ✅ Compliance: GDPR purge, encrypted PII, audit log, login alerts (Phase 8)
+- ✅ DX polish: command palette, onboarding, light/dark (Phase 9)
+- ✅ Daily DB backup, Sentry, deploy paths for 4 targets (Phase 10)
 
-- **Pre-deploy migration job is mandatory.** App Platform spins up new containers in parallel with the old ones; if you run migrations from the web container's startup, you'll race two app instances against one DB. Use the `PRE_DEPLOY` job above.
-- **`instance_size_slug` matters.** `basic-xxs` is fine for queue/scheduler, but the web service needs at least `basic-xs` (1 GB) to render Inertia pages comfortably.
-- **DO Postgres uses port 25060** with a forced TLS connection. Add `?sslmode=require` to any DSN you build manually; the boilerplate's `config/database.php` doesn't need changes because we pass discrete `DB_*` vars.
+**In progress**
+- 🟡 Phase 3.5 — multi-gateway UX leftovers (multi-currency switcher, tax/VAT engine)
+- 🟡 Slack + SMS notification drivers (channels reserved)
+- 🟡 i18n pass + RTL verification for Arabic
+
+**Planned**
+- Subdomain tenancy + custom-domain resolver
+- Mobile SDK starters (RN + Flutter)
+- SSO (SAML / OIDC), SCIM, fine-grained RBAC
+
+## 🤝 Contributing
+
+PRs welcome! Quartz is built to be forked per project — so the bar is "useful in 80% of SaaS use cases", not "infinite configurability". Before you open a PR:
+
+1. Run the test suite: `docker compose exec app php artisan test` (must stay green)
+2. Run Pint + types: `docker compose exec app vendor/bin/pint && docker compose exec app pnpm types:check && docker compose exec app pnpm lint`
+3. Add a feature test for any controller/service action you add
+4. Follow the conventions in [`CLAUDE.md`](./CLAUDE.md) and [`agent-os/standards/`](./agent-os/standards/)
+
+Found a bug? [Open an issue](https://github.com/obaidaattaee/quartz-saas/issues) with reproduction steps.
+
+## 📦 Deployment
+
+Quartz ships first-party deploy paths for four targets, listed easiest to most flexible:
+
+| Target | Best for | TLS | Managed DB |
+|---|---|---|---|
+| **Fly.io** | Solo founders, edge deploys | Auto | Fly Postgres |
+| **Railway** | Heroku-style dashboards | Auto | Railway plugins |
+| **DigitalOcean App Platform** | Predictable monthly bill | Auto | DO managed DB |
+| **Self-hosted Docker** | Full control, on-prem, EU sovereignty | nginx-proxy + acme | Containers |
+
+See [`docs/deployment.md`](./docs/deployment.md) for env-var checklists, OAuth callback URLs, and the production `docker-compose.prod.yml`.
+
+## 📄 License
+
+Quartz is open-source software licensed under the **MIT license**. Fork freely, ship commercially, no attribution required (but a star is appreciated 🌟).
+
+## 🙏 Acknowledgements
+
+Quartz stands on the shoulders of:
+- [Laravel](https://laravel.com) · [Inertia.js](https://inertiajs.com) · [React](https://react.dev) · [Tailwind CSS](https://tailwindcss.com)
+- [shadcn/ui](https://ui.shadcn.com) · [Radix UI](https://www.radix-ui.com) · [lucide-react](https://lucide.dev)
+- [Spatie Laravel Permission](https://spatie.be/docs/laravel-permission) · [Laravel Fortify](https://github.com/laravel/fortify) · [Sanctum](https://laravel.com/docs/sanctum)
+- Every payment-gateway team that shipped clear SDKs and webhook docs
+
+Built with care by [@obaidaattaee](https://github.com/obaidaattaee).
 
 ---
 
-## Self-hosted Docker
-
-For a single VPS (Hetzner, OVH, Linode) or your own metal. Uses the existing `docker-compose.prod.yml` plus an nginx-proxy + Let's Encrypt sidecar for TLS.
-
-### Prereqs
-
-- A box with Docker Engine 24+ and the Docker Compose v2 plugin.
-- A domain pointed to the box's IP (A record).
-- Ports 80 + 443 open in the firewall.
-
-### Walk-through
-
-1. **Clone the repo and prepare env.**
-   ```bash
-   git clone https://github.com/your-org/my-saas /opt/my-saas
-   cd /opt/my-saas
-   cp .env.production.example .env.production
-   # Edit .env.production:
-   #   APP_KEY=base64:$(openssl rand -base64 32)
-   #   APP_URL=https://yourdomain.com
-   #   DOMAIN=yourdomain.com
-   #   DB_PASSWORD=<strong>
-   #   MAIL_*=...
-   #   SENTRY_DSN=...           # optional, env-gated
-   #   BACKUP_BUCKET=...        # optional; falls back to storage/backups/
-   ```
-2. **Bring up the app stack.**
-   ```bash
-   docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build
-   docker compose --env-file .env.production -f docker-compose.prod.yml exec app php artisan migrate --force
-   docker compose --env-file .env.production -f docker-compose.prod.yml exec app php artisan storage:link
-   ```
-   The compose file ships five services: `app` (nginx + php-fpm), `queue` (worker), `scheduler` (loop), `db` (Postgres 16), `redis` (Redis 7).
-
-3. **Front the stack with nginx-proxy + acme-companion for TLS.** Run these in a separate compose project so it can also serve other apps on the same box.
-   ```bash
-   mkdir -p /opt/proxy && cd /opt/proxy
-   cat > docker-compose.yml <<'YAML'
-   services:
-     nginx-proxy:
-       image: nginxproxy/nginx-proxy:latest
-       restart: always
-       ports: ["80:80", "443:443"]
-       volumes:
-         - certs:/etc/nginx/certs
-         - vhost:/etc/nginx/vhost.d
-         - html:/usr/share/nginx/html
-         - /var/run/docker.sock:/tmp/docker.sock:ro
-       networks: [proxy]
-
-     acme:
-       image: nginxproxy/acme-companion:latest
-       restart: always
-       environment:
-         DEFAULT_EMAIL: ops@yourdomain.com
-       volumes_from: [nginx-proxy]
-       volumes:
-         - acme:/etc/acme.sh
-         - /var/run/docker.sock:/var/run/docker.sock:ro
-       networks: [proxy]
-
-   volumes: { certs: {}, vhost: {}, html: {}, acme: {} }
-   networks:
-     proxy:
-       name: proxy
-   YAML
-   docker compose up -d
-   ```
-4. **Wire the app into the proxy network.** Edit `/opt/my-saas/docker-compose.prod.yml` and add to the `app` service:
-   ```yaml
-   environment:
-     VIRTUAL_HOST: ${DOMAIN}
-     VIRTUAL_PORT: "80"
-     LETSENCRYPT_HOST: ${DOMAIN}
-     LETSENCRYPT_EMAIL: ops@yourdomain.com
-   networks: [default, proxy]
-
-   networks:
-     proxy:
-       external: true
-   ```
-   Then recreate just the app container: `docker compose --env-file .env.production -f docker-compose.prod.yml up -d --force-recreate app`. acme-companion will issue the cert automatically on first request.
-
-5. **Set up the daily backup cron** (the Laravel scheduler already schedules `docker/scripts/backup-db.sh` once a day, but the scheduler container has to be running for it to fire). Verify with:
-   ```bash
-   docker compose --env-file .env.production -f docker-compose.prod.yml exec app php artisan schedule:list
-   # should show:  0 0 * * *  /var/www/html/docker/scripts/backup-db.sh
-   ```
-   If `BACKUP_BUCKET` is unset in `.env.production`, dumps land at `storage/backups/$(date +%F).sql.gz` inside the `storage_logs`/`storage_public` volumes — rotate them yourself, or set `BACKUP_BUCKET=my-saas-backups` + AWS creds for S3 push. If you'd rather drive backups from the host (e.g. backup-during-maintenance windows), add this to root's crontab:
-   ```cron
-   0 3 * * *  docker compose --env-file /opt/my-saas/.env.production -f /opt/my-saas/docker-compose.prod.yml exec -T app bash docker/scripts/backup-db.sh >> /var/log/my-saas-backup.log 2>&1
-   ```
-
-### Env vars to set
-
-Everything in `.env.production.example` is required. Additionally for self-hosted:
-
-- `DOMAIN` — the host nginx-proxy matches on (also referenced by `LETSENCRYPT_HOST`).
-- `BACKUP_BUCKET` — optional; if set the daily backup uploads to `s3://<bucket>/db/`. Leave blank for local backups.
-- `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / `AWS_DEFAULT_REGION` — required when `BACKUP_BUCKET` is set. Works with AWS S3, Cloudflare R2, DO Spaces, MinIO (set `AWS_ENDPOINT` too for non-AWS).
-- `SENTRY_DSN` — optional; when set, exceptions auto-report (see `bootstrap/app.php`).
-
-### Gotchas
-
-- **`--env-file .env.production` is mandatory.** Without it, Compose substitutes `${DB_PASSWORD}` from `.env` (or empty), and Postgres comes up with the wrong creds. There is no hardcoded `environment:` block on `app` for a reason — `.env.production` is the single source of truth.
-- **Vite assets are baked into the prod image** by `docker/prod/Dockerfile`'s `pnpm build` step. After changing frontend code: `docker compose --env-file .env.production -f docker-compose.prod.yml build --no-cache app` to rebake.
-- **`storage_public` and `storage_logs` are named volumes.** They survive `docker compose down`, but if you `docker volume rm` them you lose uploaded media and logs — back them up alongside the DB.
-- **TLS first request is slow** (~30s) the very first time acme-companion fetches a cert from Let's Encrypt. Subsequent requests are instant.
-- **Health endpoint** — `/up` is what `docker-compose.prod.yml`'s healthcheck probes; if you wrap the app behind nginx-proxy, the healthcheck still talks to `http://127.0.0.1/up` inside the container, so it keeps working.
+<p align="center">
+  <sub>If Quartz saved you a week of boilerplate work, <a href="https://github.com/obaidaattaee/quartz-saas">star the repo</a> — it's the only currency open-source maintainers really get paid in.</sub>
+</p>
