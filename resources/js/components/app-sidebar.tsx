@@ -10,6 +10,7 @@ import {
     Receipt,
     Settings as SettingsIcon,
     ShieldCheck,
+    ShoppingCart,
     UsersRound,
 } from 'lucide-react';
 import AppLogo from '@/components/app-logo';
@@ -80,6 +81,11 @@ export function AppSidebar() {
                   title: 'Invoices',
                   href: tenantRoutes.billing.invoices.index({ tenantSlug }),
                   icon: Receipt,
+              },
+              {
+                  title: 'Checkout history',
+                  href: tenantRoutes.billing.checkoutHistory({ tenantSlug }),
+                  icon: ShoppingCart,
               },
               {
                   title: 'Settings',

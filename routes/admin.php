@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Admin\AuditLogsController;
+use App\Http\Controllers\Admin\CheckoutSessionsController;
 use App\Http\Controllers\Admin\DashboardController;
 use App\Http\Controllers\Admin\FeatureFlagOverridesController;
 use App\Http\Controllers\Admin\FeatureFlagsController;
@@ -101,6 +102,14 @@ Route::middleware(['auth', 'verified', 'admin.scope', 'role:Super Admin'])
             ->name('payments.refund');
         Route::post('invoices/{invoice}/manual-payment', [SubscriptionActionsController::class, 'recordManualPayment'])
             ->name('invoices.manual-payment');
+
+        // Checkout sessions — view abandoned + stuck sessions, force-cancel.
+        Route::get('checkout-sessions', [CheckoutSessionsController::class, 'index'])
+            ->name('checkout-sessions.index');
+        Route::get('checkout-sessions/{checkoutSession}', [CheckoutSessionsController::class, 'show'])
+            ->name('checkout-sessions.show');
+        Route::post('checkout-sessions/{checkoutSession}/force-cancel', [CheckoutSessionsController::class, 'forceCancel'])
+            ->name('checkout-sessions.force-cancel');
     });
 
 // Stop impersonation — gated only on `auth`. The current request's auth user

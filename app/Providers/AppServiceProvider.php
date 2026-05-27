@@ -2,8 +2,11 @@
 
 namespace App\Providers;
 
+use App\Events\CheckoutAbandoned;
 use App\Listeners\AlertOnNewDeviceLogin;
+use App\Listeners\SendCheckoutAbandonmentReminder;
 use App\Models\AppSetting;
+use App\Models\CheckoutSession;
 use App\Models\Plan;
 use App\Models\Subscription;
 use App\Models\Tenant;
@@ -124,6 +127,15 @@ class AppServiceProvider extends ServiceProvider
         $this->configureAuditObservers();
         $this->configureRateLimiters();
         $this->configureLoginAlertListener();
+        $this->configureCheckoutListeners();
+    }
+
+    protected function configureCheckoutListeners(): void
+    {
+        Event::listen(
+            CheckoutAbandoned::class,
+            SendCheckoutAbandonmentReminder::class,
+        );
     }
 
     protected function configureAuditObservers(): void
@@ -137,6 +149,8 @@ class AppServiceProvider extends ServiceProvider
         if (class_exists(Subscription::class)) {
             Subscription::observe(AuditObserver::class);
         }
+
+        CheckoutSession::observe(AuditObserver::class);
     }
 
     protected function configureRateLimiters(): void

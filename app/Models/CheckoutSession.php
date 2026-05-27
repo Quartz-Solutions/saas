@@ -39,6 +39,14 @@ class CheckoutSession extends Model
 {
     use HasFactory;
 
+    /**
+     * @var array<int, string> Audited fields; AuditObserver writes one
+     *                         audit_logs row per change to any of these. Result payload, metadata,
+     *                         and gateway_session_id are intentionally NOT audited — they're noisy
+     *                         and not the state-transition signal admins care about.
+     */
+    public static array $auditableFields = ['status', 'gateway', 'cancel_reason'];
+
     public const STATUS_PENDING = 'pending';
 
     public const STATUS_AWAITING_PAYMENT = 'awaiting_payment';

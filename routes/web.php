@@ -4,6 +4,7 @@ use App\Http\Controllers\API\UserSearchController;
 use App\Http\Controllers\Auth\MagicLinkController;
 use App\Http\Controllers\Auth\SocialController;
 use App\Http\Controllers\Billing\BillingController;
+use App\Http\Controllers\Billing\CheckoutHistoryController;
 use App\Http\Controllers\Billing\InvoicesController;
 use App\Http\Controllers\Billing\WebhookController;
 use App\Http\Controllers\Checkout\CheckoutController;
@@ -189,6 +190,8 @@ Route::middleware(['auth', 'verified', 'tenant', 'tenant.member'])
             ->name('billing.portal');
         Route::get('billing/invoices', [InvoicesController::class, 'index'])
             ->name('billing.invoices.index');
+        Route::get('billing/checkout-history', [CheckoutHistoryController::class, 'index'])
+            ->name('billing.checkout-history');
         Route::get('billing/invoices/{invoice}/pdf', [InvoicesController::class, 'pdf'])
             ->name('billing.invoices.pdf');
     });

@@ -8,6 +8,7 @@ import {
     LayoutGrid,
     LogOut,
     Receipt,
+    ShoppingCart,
     Wallet,
     Webhook,
 } from 'lucide-react';
@@ -20,6 +21,7 @@ import { cn, toUrl } from '@/lib/utils';
 import type { NavItem } from '@/types';
 import { dashboard as adminDashboard, stopImpersonating } from '@/routes/admin';
 import { index as auditIndex } from '@/routes/admin/audit';
+import { index as checkoutSessionsIndex } from '@/routes/admin/checkout-sessions';
 import { index as featureFlagsIndex } from '@/routes/admin/feature-flags';
 import { index as gatewaysIndex } from '@/routes/admin/gateways';
 import { index as plansIndex } from '@/routes/admin/plans';
@@ -48,6 +50,11 @@ const sidebarNavItems: NavItem[] = [
         title: 'Subscriptions',
         href: subscriptionsIndex(),
         icon: Receipt,
+    },
+    {
+        title: 'Checkout sessions',
+        href: checkoutSessionsIndex(),
+        icon: ShoppingCart,
     },
     {
         title: 'Payment gateways',
