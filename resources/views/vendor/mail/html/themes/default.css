@@ -28,7 +28,9 @@ body {
     height: 100%;
     line-height: 1.55;
     margin: 0;
-    padding: 0;
+    /* Breathing room above the card so it doesn't kiss the top of the
+       email-client viewport. */
+    padding: 32px 0;
     width: 100% !important;
 }
 
@@ -38,8 +40,8 @@ p, ul, ol, blockquote {
 }
 
 a {
-    color: #4f46e5;
-    text-decoration: none;
+    color: #18181b;
+    text-decoration: underline;
 }
 
 a img { border: none; }
@@ -114,12 +116,12 @@ img { max-width: 100%; }
 }
 
 .header-stripe {
-    background: linear-gradient(90deg, #4f46e5 0%, #7c3aed 50%, #ec4899 100%);
+    background-color: #18181b;
     border-top-left-radius: 14px;
     border-top-right-radius: 14px;
-    height: 6px;
-    line-height: 6px;
-    font-size: 6px;
+    height: 4px;
+    line-height: 4px;
+    font-size: 4px;
 }
 
 .header-band {
@@ -258,52 +260,47 @@ img { max-width: 100%; }
     color: #ffffff;
     display: inline-block;
     overflow: hidden;
-    text-decoration: none;
-    font-size: 15px;
+    text-decoration: none !important;
+    font-size: 14px;
     font-weight: 600;
     letter-spacing: 0.01em;
-    padding: 12px 22px;
-    box-shadow: 0 1px 2px rgba(79, 70, 229, 0.25),
-        0 4px 12px rgba(79, 70, 229, 0.2);
+    line-height: 1;
+    /* Compact paddings — the colored 6/14 border belts are the Outlook-safe
+       way to add internal padding, kept smaller than before so the button
+       no longer looks oversized. */
+    padding: 6px 0;
 }
 
 .button-primary {
-    background-color: #4f46e5;
-    background-image: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
-    border-top: 10px solid #4f46e5;
-    border-right: 18px solid #4f46e5;
-    border-bottom: 10px solid #4f46e5;
-    border-left: 18px solid #4f46e5;
+    background-color: #18181b;
+    border-top: 6px solid #18181b;
+    border-right: 14px solid #18181b;
+    border-bottom: 6px solid #18181b;
+    border-left: 14px solid #18181b;
 }
 
 .button-success,
 .button-green {
-    background-color: #16a34a;
-    background-image: linear-gradient(135deg, #16a34a 0%, #10b981 100%);
-    border-top: 10px solid #16a34a;
-    border-right: 18px solid #16a34a;
-    border-bottom: 10px solid #16a34a;
-    border-left: 18px solid #16a34a;
-    box-shadow: 0 1px 2px rgba(22, 163, 74, 0.25),
-        0 4px 12px rgba(22, 163, 74, 0.2);
+    background-color: #18181b;
+    border-top: 6px solid #18181b;
+    border-right: 14px solid #18181b;
+    border-bottom: 6px solid #18181b;
+    border-left: 14px solid #18181b;
 }
 
 .button-error,
 .button-red {
-    background-color: #e11d48;
-    background-image: linear-gradient(135deg, #e11d48 0%, #f43f5e 100%);
-    border-top: 10px solid #e11d48;
-    border-right: 18px solid #e11d48;
-    border-bottom: 10px solid #e11d48;
-    border-left: 18px solid #e11d48;
-    box-shadow: 0 1px 2px rgba(225, 29, 72, 0.25),
-        0 4px 12px rgba(225, 29, 72, 0.2);
+    background-color: #b91c1c;
+    border-top: 6px solid #b91c1c;
+    border-right: 14px solid #b91c1c;
+    border-bottom: 6px solid #b91c1c;
+    border-left: 14px solid #b91c1c;
 }
 
 /* Panels */
 
 .panel {
-    border-left: 4px solid #4f46e5;
+    border-left: 4px solid #18181b;
     margin: 21px 0;
     background-color: #f7f7fb;
     border-radius: 8px;
@@ -337,7 +334,7 @@ img { max-width: 100%; }
     padding: 32px;
 }
 
-/* Dark mode (Apple Mail + supporters) */
+/* Dark mode (Apple Mail + supporters) — invert to white-on-black brand */
 
 @media (prefers-color-scheme: dark) {
     body,
@@ -345,6 +342,9 @@ img { max-width: 100%; }
     .body {
         background-color: #09090b !important;
         color: #d4d4d8 !important;
+    }
+    .header-stripe {
+        background-color: #fafafa !important;
     }
     .header-band,
     .inner-body {
@@ -357,16 +357,31 @@ img { max-width: 100%; }
     p, .table td {
         color: #d4d4d8 !important;
     }
+    a {
+        color: #fafafa !important;
+    }
     .subcopy, .table th {
         border-color: #27272a !important;
     }
     .footer p {
         color: #71717a !important;
     }
+    .footer a {
+        color: #a1a1aa !important;
+    }
     .panel {
         background-color: #1c1c20 !important;
+        border-left-color: #fafafa !important;
     }
     .panel-content p {
         color: #d4d4d8 !important;
+    }
+    /* Invert button: white bg, black text. */
+    .button-primary,
+    .button-success,
+    .button-green {
+        background-color: #fafafa !important;
+        border-color: #fafafa !important;
+        color: #18181b !important;
     }
 }

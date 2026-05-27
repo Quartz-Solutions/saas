@@ -95,6 +95,12 @@ return title;
                 return PublicLayout;
             case name.startsWith('checkout/'):
                 return PublicLayout;
+            // Invitation acceptance pages are shown to visitors who may not
+            // be logged in yet — use the public/marketing layout so the
+            // dashboard chrome (sidebar, bell, switcher) doesn't show.
+            case name === 'account/invitation-invalid':
+            case name === 'account/invitation-pending':
+                return PublicLayout;
             case name.startsWith('settings/'):
                 return [AppLayout, SettingsLayout];
             case name.startsWith('admin/'):

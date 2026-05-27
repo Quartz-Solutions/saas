@@ -9,7 +9,13 @@ import { Spinner } from '@/components/ui/spinner';
 import { login } from '@/routes';
 import { store } from '@/routes/register';
 
+function emailFromQuery(): string {
+    if (typeof window === 'undefined') return '';
+    return new URL(window.location.href).searchParams.get('email') ?? '';
+}
+
 export default function Register() {
+    const prefillEmail = emailFromQuery();
     return (
         <>
             <Head title="Register" />
@@ -50,6 +56,7 @@ export default function Register() {
                                     autoComplete="email"
                                     name="email"
                                     placeholder="email@example.com"
+                                    defaultValue={prefillEmail}
                                 />
                                 <InputError message={errors.email} />
                             </div>

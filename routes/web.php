@@ -113,10 +113,13 @@ Route::middleware(['auth', 'verified'])
         Route::delete('tenants/{tenant}', [TenantsController::class, 'destroyFromAccount'])
             ->whereNumber('tenant')
             ->name('tenants.destroy');
-
-        Route::get('invitations/{token}', [TenantInvitationsController::class, 'accept'])
-            ->name('invitations.accept');
     });
+
+// Invitation acceptance — public. Unauthenticated visitors get a landing
+// page with sign-in/sign-up CTAs prefilled with the invitee email; the
+// intended URL is stashed in the session so post-login they land back here.
+Route::get('account/invitations/{token}', [TenantInvitationsController::class, 'accept'])
+    ->name('account.invitations.accept');
 
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('tenants/{tenant}/switch', TenantSwitchController::class)

@@ -27,6 +27,11 @@ type Props = {
     socialProviders?: Record<string, SocialProvider>;
 };
 
+function emailFromQuery(): string {
+    if (typeof window === 'undefined') return '';
+    return new URL(window.location.href).searchParams.get('email') ?? '';
+}
+
 function SocialIcon({ icon }: { icon: string }) {
     if (icon === 'github') {
 return <Github className="size-4" />;
@@ -55,6 +60,7 @@ export default function Login({
     socialProviders = {},
 }: Props) {
     const providerEntries = Object.entries(socialProviders);
+    const prefillEmail = emailFromQuery();
 
     return (
         <>
@@ -104,6 +110,7 @@ export default function Login({
                                     tabIndex={1}
                                     autoComplete="email"
                                     placeholder="email@example.com"
+                                    defaultValue={prefillEmail}
                                 />
                                 <InputError message={errors.email} />
                             </div>

@@ -85,6 +85,124 @@ class TenantInvitationsControllerTest extends TestCase
         ]);
     }
 
+    public function test_guest_visit_renders_pending_landing(): void
+    {
+        $owner = User::factory()->create();
+        $tenant = app(TenantService::class)->create($owner, ['name' => 'Acme']);
+
+        TenantInvitation::create([
+            'tenant_id' => $tenant->id,
+            'invited_by_id' => $owner->id,
+            'email' => 'pending@example.com',
+            'role' => 'Member',
+            'token' => str_repeat('p', 64),
+            'expires_at' => now()->addDays(7),
+        ]);
+
+        $this->get(route('account.invitations.accept', ['token' => str_repeat('p', 64)]))
+            ->assertOk()
+            ->assertInertia(fn ($p) => $p
+                ->component('account/invitation-pending')
+                ->where('invitedEmail', 'pending@example.com')
+                ->where('tenant.slug', $tenant->slug)
+                ->where('hasAccount', false),
+            );
+
+        // Intended URL is stashed so post-auth redirect lands back here.
+        $this->assertSame(
+            url(route('account.invitations.accept', ['token' => str_repeat('p', 64)])),
+            session('url.intended'),
+        );
+    }
+
+    public function test_accept_renders_invalid_page_when_token_unknown(): void
+    {
+        $user = User::factory()->create();
+
+        $this->actingAs($user)
+            ->get(route('account.invitations.accept', ['token' => str_repeat('x', 64)]))
+            ->assertOk()
+            ->assertInertia(fn ($p) => $p
+                ->component('account/invitation-invalid')
+                ->where('reason', 'not_found'),
+            );
+    }
+
+    public function test_accept_renders_invalid_page_when_expired(): void
+    {
+        $owner = User::factory()->create();
+        $invitee = User::factory()->create(['email' => 'expired@example.com']);
+        $tenant = app(TenantService::class)->create($owner, ['name' => 'Acme']);
+
+        TenantInvitation::create([
+            'tenant_id' => $tenant->id,
+            'invited_by_id' => $owner->id,
+            'email' => 'expired@example.com',
+            'role' => 'Member',
+            'token' => str_repeat('e', 64),
+            'expires_at' => now()->subDay(),
+        ]);
+
+        $this->actingAs($invitee)
+            ->get(route('account.invitations.accept', ['token' => str_repeat('e', 64)]))
+            ->assertOk()
+            ->assertInertia(fn ($p) => $p
+                ->component('account/invitation-invalid')
+                ->where('reason', 'expired')
+                ->where('tenant.slug', $tenant->slug),
+            );
+    }
+
+    public function test_accept_renders_invalid_page_when_revoked(): void
+    {
+        $owner = User::factory()->create();
+        $invitee = User::factory()->create(['email' => 'revoked@example.com']);
+        $tenant = app(TenantService::class)->create($owner, ['name' => 'Acme']);
+
+        TenantInvitation::create([
+            'tenant_id' => $tenant->id,
+            'invited_by_id' => $owner->id,
+            'email' => 'revoked@example.com',
+            'role' => 'Member',
+            'token' => str_repeat('r', 64),
+            'expires_at' => now()->addDays(7),
+            'revoked_at' => now()->subHour(),
+        ]);
+
+        $this->actingAs($invitee)
+            ->get(route('account.invitations.accept', ['token' => str_repeat('r', 64)]))
+            ->assertOk()
+            ->assertInertia(fn ($p) => $p
+                ->component('account/invitation-invalid')
+                ->where('reason', 'revoked'),
+            );
+    }
+
+    public function test_accept_renders_invalid_page_when_wrong_email(): void
+    {
+        $owner = User::factory()->create();
+        $stranger = User::factory()->create(['email' => 'not-invitee@example.com']);
+        $tenant = app(TenantService::class)->create($owner, ['name' => 'Acme']);
+
+        TenantInvitation::create([
+            'tenant_id' => $tenant->id,
+            'invited_by_id' => $owner->id,
+            'email' => 'someone@example.com',
+            'role' => 'Member',
+            'token' => str_repeat('w', 64),
+            'expires_at' => now()->addDays(7),
+        ]);
+
+        $this->actingAs($stranger)
+            ->get(route('account.invitations.accept', ['token' => str_repeat('w', 64)]))
+            ->assertOk()
+            ->assertInertia(fn ($p) => $p
+                ->component('account/invitation-invalid')
+                ->where('reason', 'wrong_email')
+                ->where('invitedEmail', 'someone@example.com'),
+            );
+    }
+
     public function test_owner_can_revoke_invitation(): void
     {
         $owner = User::factory()->create();
