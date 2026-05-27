@@ -1,94 +1,15 @@
-import { Link, router, usePage } from '@inertiajs/react';
-import {
-    Building2,
-    ClipboardList,
-    Cog,
-    CreditCard,
-    Flag,
-    LayoutGrid,
-    LogOut,
-    Receipt,
-    ShoppingCart,
-    Wallet,
-    Webhook,
-} from 'lucide-react';
+import { router, usePage } from '@inertiajs/react';
+import { LogOut } from 'lucide-react';
 import type { PropsWithChildren } from 'react';
 import Heading from '@/components/heading';
 import { Button } from '@/components/ui/button';
-import { Separator } from '@/components/ui/separator';
-import { useCurrentUrl } from '@/hooks/use-current-url';
-import { cn, toUrl } from '@/lib/utils';
-import type { NavItem } from '@/types';
-import { dashboard as adminDashboard, stopImpersonating } from '@/routes/admin';
-import { index as auditIndex } from '@/routes/admin/audit';
-import { index as checkoutSessionsIndex } from '@/routes/admin/checkout-sessions';
-import { index as featureFlagsIndex } from '@/routes/admin/feature-flags';
-import { index as gatewaysIndex } from '@/routes/admin/gateways';
-import { index as plansIndex } from '@/routes/admin/plans';
-import { index as settingsIndex } from '@/routes/admin/settings';
-import { index as subscriptionsIndex } from '@/routes/admin/subscriptions';
-import { index as tenantsIndex } from '@/routes/admin/tenants';
-import { index as webhooksIndex } from '@/routes/admin/webhooks';
-
-const sidebarNavItems: NavItem[] = [
-    {
-        title: 'Overview',
-        href: adminDashboard(),
-        icon: LayoutGrid,
-    },
-    {
-        title: 'Tenants',
-        href: tenantsIndex(),
-        icon: Building2,
-    },
-    {
-        title: 'Plans',
-        href: plansIndex(),
-        icon: CreditCard,
-    },
-    {
-        title: 'Subscriptions',
-        href: subscriptionsIndex(),
-        icon: Receipt,
-    },
-    {
-        title: 'Checkout sessions',
-        href: checkoutSessionsIndex(),
-        icon: ShoppingCart,
-    },
-    {
-        title: 'Payment gateways',
-        href: gatewaysIndex(),
-        icon: Wallet,
-    },
-    {
-        title: 'Webhooks',
-        href: webhooksIndex(),
-        icon: Webhook,
-    },
-    {
-        title: 'Audit log',
-        href: auditIndex(),
-        icon: ClipboardList,
-    },
-    {
-        title: 'Feature flags',
-        href: featureFlagsIndex(),
-        icon: Flag,
-    },
-    {
-        title: 'Settings',
-        href: settingsIndex(),
-        icon: Cog,
-    },
-];
+import { stopImpersonating } from '@/routes/admin';
 
 type ImpersonationProp = {
     impersonator: { id: number; name: string; email: string };
 } | null;
 
 export default function AdminLayout({ children }: PropsWithChildren) {
-    const { isCurrentOrParentUrl } = useCurrentUrl();
     const { impersonation } = usePage<{ impersonation: ImpersonationProp }>().props;
 
     return (
@@ -121,37 +42,7 @@ export default function AdminLayout({ children }: PropsWithChildren) {
                 description="Internal staff tools — bypasses tenant scoping."
             />
 
-            <div className="flex flex-col lg:flex-row lg:space-x-12">
-                <aside className="w-full max-w-xl lg:w-56">
-                    <nav
-                        className="flex flex-col space-y-1 space-x-0"
-                        aria-label="Admin"
-                    >
-                        {sidebarNavItems.map((item, index) => (
-                            <Button
-                                key={`${toUrl(item.href)}-${index}`}
-                                size="sm"
-                                variant="ghost"
-                                asChild
-                                className={cn('w-full justify-start', {
-                                    'bg-muted': isCurrentOrParentUrl(item.href),
-                                })}
-                            >
-                                <Link href={item.href}>
-                                    {item.icon && (
-                                        <item.icon className="h-4 w-4" />
-                                    )}
-                                    {item.title}
-                                </Link>
-                            </Button>
-                        ))}
-                    </nav>
-                </aside>
-
-                <Separator className="my-6 lg:hidden" />
-
-                <div className="flex-1">{children}</div>
-            </div>
+            <div className="mt-6">{children}</div>
         </div>
     );
 }
