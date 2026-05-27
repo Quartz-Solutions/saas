@@ -137,7 +137,9 @@ class AppSettingsService
                     'help' => $field['help'] ?? null,
                     'is_secret' => $isSecret,
                     'has_value' => $hasValue,
-                    'value' => $isSecret && $hasValue ? self::SECRET_MASK : ($raw ?? $field['default'] ?? null),
+                    'value' => $isSecret && $hasValue
+                        ? self::SECRET_MASK
+                        : ($raw ?? $this->defaultFor($field)),
                 ];
             }
 
@@ -151,6 +153,25 @@ class AppSettingsService
         }
 
         return $groups;
+    }
+
+    /**
+     * Resolve the default value for a single field declaration. Honours
+     * (in order): `default_path` resolved via url(), then `default`
+     * literal, then null.
+     *
+     * `default_path` is host-aware so a deploy on a non-standard
+     * domain/port/scheme gets a working callback URL out of the box.
+     *
+     * @param  array<string, mixed>  $field
+     */
+    protected function defaultFor(array $field): ?string
+    {
+        if (! empty($field['default_path'])) {
+            return url((string) $field['default_path']);
+        }
+
+        return $field['default'] ?? null;
     }
 
     /**
@@ -213,18 +234,28 @@ class AppSettingsService
     public function applyOverrides(): void
     {
         $overrides = $this->allOverrides();
-        if ($overrides === []) {
-            return;
-        }
 
         foreach ($this->catalog() as $group) {
             foreach ($group['fields'] as $key => $field) {
-                if (! array_key_exists($key, $overrides)) {
+                if (array_key_exists($key, $overrides)) {
+                    Config::set(
+                        $field['config_path'],
+                        $this->castForConfig($overrides[$key], $field),
+                    );
+
                     continue;
                 }
 
-                $value = $this->castForConfig($overrides[$key], $field);
-                Config::set($field['config_path'], $value);
+                // No override saved. If the field declares a default_path
+                // (e.g. GOOGLE_REDIRECT_URI → /auth/google/callback) and the
+                // existing runtime config is empty, fill it from url(...).
+                // This keeps Socialite working out of the box on any host
+                // without forcing the admin to type the URL manually.
+                if (! empty($field['default_path'])
+                    && blank(Config::get($field['config_path']))
+                ) {
+                    Config::set($field['config_path'], url((string) $field['default_path']));
+                }
             }
         }
     }

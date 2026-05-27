@@ -176,6 +176,59 @@ class SettingsControllerTest extends TestCase
         $this->assertSame('Quartz', Config::get('app.name'));
     }
 
+    public function test_oauth_redirect_uri_defaults_to_host_aware_url_when_no_override(): void
+    {
+        config(['services.google.redirect' => null]);
+        config(['services.github.redirect' => null]);
+
+        $admin = $this->makeSuperAdmin();
+
+        // url() resolves against the current request host — exactly what we
+        // want in production (admin browses to the canonical domain, the
+        // default callback URL points back at the same domain/port/scheme).
+        $expectedGoogle = url('/auth/google/callback');
+        $expectedGitHub = url('/auth/github/callback');
+
+        $this->actingAs($admin)
+            ->get('/admin/settings')
+            ->assertOk()
+            ->assertInertia(fn ($p) => $p
+                ->where('groups.oauth.fields.GOOGLE_REDIRECT_URI.value', $expectedGoogle)
+                ->where('groups.oauth.fields.GITHUB_REDIRECT_URI.value', $expectedGitHub)
+            );
+    }
+
+    public function test_apply_overrides_hydrates_default_redirect_when_no_override_saved(): void
+    {
+        config(['services.google.redirect' => null]);
+
+        Cache::forget(AppSettingsService::CACHE_KEY);
+        app(AppSettingsService::class)->applyOverrides();
+
+        $this->assertSame(
+            url('/auth/google/callback'),
+            Config::get('services.google.redirect'),
+        );
+    }
+
+    public function test_apply_overrides_saved_redirect_wins_over_default_path(): void
+    {
+        AppSetting::create([
+            'group' => 'oauth',
+            'key' => 'GOOGLE_REDIRECT_URI',
+            'is_secret' => false,
+            'value' => 'https://custom.example.com/auth/google/back',
+        ]);
+
+        Cache::forget(AppSettingsService::CACHE_KEY);
+        app(AppSettingsService::class)->applyOverrides();
+
+        $this->assertSame(
+            'https://custom.example.com/auth/google/back',
+            Config::get('services.google.redirect'),
+        );
+    }
+
     public function test_update_invalidates_cache_so_next_request_reads_new_value(): void
     {
         $admin = $this->makeSuperAdmin();

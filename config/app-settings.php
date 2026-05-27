@@ -157,6 +157,7 @@ return [
                     'rules' => 'nullable|url|max:255',
                     'label' => 'Google redirect URI',
                     'help' => 'Must match the Authorized redirect URI configured at Google Cloud Console.',
+                    'default_path' => '/auth/google/callback',
                 ],
                 'GITHUB_CLIENT_ID' => [
                     'config_path' => 'services.github.client_id',
@@ -176,6 +177,7 @@ return [
                     'rules' => 'nullable|url|max:255',
                     'label' => 'GitHub redirect URI',
                     'help' => 'Must match the callback URL configured at GitHub Developer Settings.',
+                    'default_path' => '/auth/github/callback',
                 ],
             ],
         ],

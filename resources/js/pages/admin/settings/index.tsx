@@ -2,8 +2,10 @@ import { Form, Head } from '@inertiajs/react';
 import axios from 'axios';
 import {
     Bug,
+    Check,
     CheckCircle2,
     Cloud,
+    Copy,
     CreditCard,
     Eye,
     EyeOff,
@@ -253,6 +255,8 @@ function FieldRow({ field, error }: { field: Field; error?: string }) {
         );
     }
 
+    const isCopyable = field.type === 'url' && !isSecret && value !== '';
+
     return (
         <div className="grid gap-2">
             <Label htmlFor={inputId}>{field.label}</Label>
@@ -274,7 +278,7 @@ function FieldRow({ field, error }: { field: Field; error?: string }) {
                     }}
                     onChange={(e) => setValue(e.target.value)}
                     autoComplete={isSecret ? 'new-password' : 'off'}
-                    className={isSecret ? 'pr-10' : undefined}
+                    className={isSecret || isCopyable ? 'pr-10' : undefined}
                 />
                 {isSecret ? (
                     <button
@@ -287,6 +291,7 @@ function FieldRow({ field, error }: { field: Field; error?: string }) {
                         {revealed ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
                     </button>
                 ) : null}
+                {isCopyable ? <CopyButton text={value} /> : null}
             </div>
             <p className="font-mono text-xs text-muted-foreground">{field.key}</p>
             {field.help ? (
@@ -294,5 +299,35 @@ function FieldRow({ field, error }: { field: Field; error?: string }) {
             ) : null}
             <InputError message={error} />
         </div>
+    );
+}
+
+function CopyButton({ text }: { text: string }) {
+    const [copied, setCopied] = useState(false);
+
+    const onCopy = async () => {
+        try {
+            await navigator.clipboard.writeText(text);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1500);
+        } catch {
+            // Clipboard API unavailable (insecure context, etc.) — silent.
+        }
+    };
+
+    return (
+        <button
+            type="button"
+            onClick={onCopy}
+            className="absolute inset-y-0 right-0 flex items-center px-3 text-muted-foreground hover:text-foreground"
+            aria-label={copied ? 'Copied' : 'Copy to clipboard'}
+            tabIndex={-1}
+        >
+            {copied ? (
+                <Check className="size-4 text-green-600" />
+            ) : (
+                <Copy className="size-4" />
+            )}
+        </button>
     );
 }
