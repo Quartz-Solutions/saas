@@ -13,8 +13,9 @@ import type {LucideIcon} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
-import { login, register } from '@/routes';
+import { login } from '@/routes';
 import marketingRoutes from '@/routes/marketing';
+import { show as getStarted } from '@/actions/App/Http/Controllers/Onboarding/GetStartedController';
 
 type Feature = {
     title: string;
@@ -71,7 +72,7 @@ export default function MarketingHome({ features }: Props) {
                     <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
                         {canRegister !== false ? (
                             <Button asChild size="lg" data-test="hero-cta-primary">
-                                <Link href={register().url}>
+                                <Link href={getStarted().url}>
                                     Get started <ArrowRight className="ml-2 size-4" />
                                 </Link>
                             </Button>

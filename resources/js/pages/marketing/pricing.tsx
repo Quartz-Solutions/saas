@@ -3,7 +3,7 @@ import { Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
-import { register, login } from '@/routes';
+import { show as getStarted } from '@/actions/App/Http/Controllers/Onboarding/GetStartedController';
 
 type Plan = {
     name: string;
@@ -43,7 +43,6 @@ function formatPrice(cents: number, currency: string): string {
 
 export default function MarketingPricing({ plans, trialDays }: Props) {
     const { canRegister } = usePage<SharedProps>().props;
-    const ctaHref = canRegister !== false ? register().url : login().url;
 
     return (
         <>
@@ -121,7 +120,15 @@ export default function MarketingPricing({ plans, trialDays }: Props) {
                                         variant={plan.highlighted ? 'default' : 'outline'}
                                         data-test={`pricing-card-${plan.slug}-cta`}
                                     >
-                                        <Link href={ctaHref}>{plan.cta}</Link>
+                                        <Link
+                                            href={
+                                                canRegister !== false
+                                                    ? getStarted({ query: { plan: plan.slug } }).url
+                                                    : '/login'
+                                            }
+                                        >
+                                            {plan.cta}
+                                        </Link>
                                     </Button>
                                 </div>
                             </CardContent>

@@ -24,6 +24,31 @@ class GetStartedTest extends TestCase
                 ->component('onboarding/get-started')
                 ->has('plans', 3)
                 ->where('plans.0.slug', 'free')
+                ->where('selectedPlanSlug', null)
+            );
+    }
+
+    public function test_show_accepts_plan_query_param_for_preselection(): void
+    {
+        $this->seed(PlansSeeder::class);
+
+        $this->get('/get-started?plan=pro')
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->component('onboarding/get-started')
+                ->where('selectedPlanSlug', 'pro')
+            );
+    }
+
+    public function test_show_ignores_unknown_plan_query_param(): void
+    {
+        $this->seed(PlansSeeder::class);
+
+        $this->get('/get-started?plan=ghost-plan')
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->component('onboarding/get-started')
+                ->where('selectedPlanSlug', null)
             );
     }
 

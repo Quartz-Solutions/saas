@@ -36,6 +36,7 @@ type Plan = {
 
 type Props = {
     plans: Plan[];
+    selectedPlanSlug?: string | null;
 };
 
 const formatMoney = (cents: number, currency: string) => {
@@ -46,8 +47,11 @@ const formatMoney = (cents: number, currency: string) => {
     }
 };
 
-export default function GetStarted({ plans }: Props) {
-    const initialPlan = plans.find((p) => p.price_cents > 0) ?? plans[0];
+export default function GetStarted({ plans, selectedPlanSlug }: Props) {
+    const preselected = selectedPlanSlug
+        ? plans.find((p) => p.slug === selectedPlanSlug)
+        : undefined;
+    const initialPlan = preselected ?? plans.find((p) => p.price_cents > 0) ?? plans[0];
     const [selectedPlan, setSelectedPlan] = useState<string>(initialPlan?.slug ?? '');
 
     const { data, setData, post, processing, errors } = useForm({

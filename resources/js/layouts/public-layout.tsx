@@ -6,8 +6,9 @@ import AppLogoIcon from '@/components/app-logo-icon';
 import CookieConsentBanner from '@/components/cookie-consent-banner';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { login, register } from '@/routes';
+import { login } from '@/routes';
 import { home } from '@/routes';
+import { show as getStarted } from '@/actions/App/Http/Controllers/Onboarding/GetStartedController';
 import marketingRoutes from '@/routes/marketing';
 import docsRoutes from '@/routes/marketing/docs';
 import legalRoutes from '@/routes/marketing/legal';
@@ -70,7 +71,7 @@ export default function PublicLayout({ children }: { children: ReactNode }) {
                                 </Button>
                                 {canRegister !== false && (
                                     <Button asChild size="sm" data-test="public-signup">
-                                        <Link href={register().url}>Get started</Link>
+                                        <Link href={getStarted().url}>Get started</Link>
                                     </Button>
                                 )}
                             </>
@@ -117,7 +118,7 @@ export default function PublicLayout({ children }: { children: ReactNode }) {
                                         </Button>
                                         {canRegister !== false && (
                                             <Button asChild size="sm">
-                                                <Link href={register().url}>Get started</Link>
+                                                <Link href={getStarted().url}>Get started</Link>
                                             </Button>
                                         )}
                                     </>
