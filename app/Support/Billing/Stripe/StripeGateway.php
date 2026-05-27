@@ -256,21 +256,6 @@ class StripeGateway implements CheckoutGateway, PaymentGateway, SubscriptionGate
         };
     }
 
-    /**
-     * Build a Customer Portal URL for the tenant.
-     */
-    public function customerPortalUrl(Tenant $tenant, string $returnUrl): string
-    {
-        $customer = $this->ensureCustomer($tenant);
-
-        $session = $this->client->billingPortal->sessions->create([
-            'customer' => $customer->gateway_customer_id,
-            'return_url' => $returnUrl,
-        ]);
-
-        return (string) $session->url;
-    }
-
     // ------------------------------------------------------------------
     // PaymentGateway
     // ------------------------------------------------------------------

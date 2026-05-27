@@ -1,5 +1,5 @@
 import { Form, Head, Link, usePage } from '@inertiajs/react';
-import { Check, ExternalLink, Sparkles } from 'lucide-react';
+import { Check, Sparkles } from 'lucide-react';
 import { useState } from 'react';
 import BillingController from '@/actions/App/Http/Controllers/Billing/BillingController';
 import Heading from '@/components/heading';
@@ -96,17 +96,6 @@ export default function BillingPlans({ plans, subscription, gateways, default_ga
                                 Invoices
                             </Link>
                         </Button>
-                        {gateways.some((g) => g.id === 'stripe') && subscription && (
-                            <Button variant="outline" asChild>
-                                <Link
-                                    href={tenantRoutes.billing.portal({ tenantSlug })}
-                                    data-test="link-portal"
-                                >
-                                    <ExternalLink className="mr-1.5 size-4" />
-                                    Customer portal
-                                </Link>
-                            </Button>
-                        )}
                     </div>
                 </div>
 

@@ -186,8 +186,6 @@ Route::middleware(['auth', 'verified', 'tenant', 'tenant.member'])
             ->name('billing.cancel');
         Route::post('billing/resume', [BillingController::class, 'resume'])
             ->name('billing.resume');
-        Route::get('billing/portal', [BillingController::class, 'portal'])
-            ->name('billing.portal');
         Route::get('billing/invoices', [InvoicesController::class, 'index'])
             ->name('billing.invoices.index');
         Route::get('billing/checkout-history', [CheckoutHistoryController::class, 'index'])

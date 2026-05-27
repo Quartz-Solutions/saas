@@ -9,7 +9,6 @@ use App\Models\Plan;
 use App\Models\Tenant;
 use App\Support\Billing\BillingService;
 use App\Support\Billing\GatewayRegistry;
-use App\Support\Billing\Stripe\StripeGateway;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -125,26 +124,6 @@ class BillingController extends Controller
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Subscription resumed.')]);
 
         return to_route('tenants.billing.plans', ['tenantSlug' => $tenantSlug]);
-    }
-
-    /**
-     * Stripe customer portal redirect.
-     */
-    public function portal(Request $request, string $tenantSlug): RedirectResponse
-    {
-        $tenant = $this->currentTenant();
-        $stripe = $this->registry->find('stripe');
-
-        if (! $stripe instanceof StripeGateway) {
-            Inertia::flash('toast', ['type' => 'error', 'message' => __('Stripe is not configured.')]);
-
-            return back();
-        }
-
-        $returnUrl = route('tenants.billing.plans', ['tenantSlug' => $tenantSlug]);
-        $url = $stripe->customerPortalUrl($tenant, $returnUrl);
-
-        return redirect()->away($url);
     }
 
     private function currentTenant(): Tenant
