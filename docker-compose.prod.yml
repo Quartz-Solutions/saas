@@ -49,8 +49,11 @@ services:
     <<: *app_build
     restart: always
     env_file: .env.production
-    command: php artisan queue:work --sleep=3 --tries=3 --max-time=3600
     entrypoint: ["/bin/sh", "-c"]
+    # Single-string arg so `sh -c` runs the whole command — a list-form
+    # command here would be parsed as positional args ($0,$1,...) and only
+    # `php` would execute, exiting immediately into a restart loop.
+    command: ["php artisan queue:work --sleep=3 --tries=3 --max-time=3600"]
     volumes:
       - storage_public:/var/www/html/storage/app/public
       - storage_logs:/var/www/html/storage/logs
@@ -64,12 +67,8 @@ services:
     <<: *app_build
     restart: always
     env_file: .env.production
-    command: >
-      sh -c "while true; do
-        php artisan schedule:run --verbose --no-interaction;
-        sleep 60;
-      done"
     entrypoint: ["/bin/sh", "-c"]
+    command: ["while true; do php artisan schedule:run --verbose --no-interaction; sleep 60; done"]
     volumes:
       - storage_public:/var/www/html/storage/app/public
       - storage_logs:/var/www/html/storage/logs
