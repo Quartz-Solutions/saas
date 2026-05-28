@@ -31,6 +31,12 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        // TLS is terminated by an upstream proxy/load balancer that forwards
+        // to the container over plain HTTP. Trust the X-Forwarded-* headers so
+        // Laravel resolves the original https scheme — otherwise asset()/Vite
+        // URLs are generated as http:// from the proxied request scheme.
+        $middleware->trustProxies(at: '*');
+
         $middleware->encryptCookies(except: ['appearance', 'sidebar_state', 'cms_locale']);
 
         // CMS redirects run *before* route matching so unmatched paths

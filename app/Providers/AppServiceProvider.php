@@ -45,6 +45,7 @@ use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rules\Password;
@@ -243,6 +244,14 @@ class AppServiceProvider extends ServiceProvider
      */
     protected function configureDefaults(): void
     {
+        // Behind a TLS-terminating proxy the inbound request can look like
+        // plain http, which makes asset()/Vite generate http:// URLs. When
+        // APP_URL is https, force the scheme so generated URLs (and Vite
+        // assets) stay https regardless of what the proxy forwards.
+        if (str_starts_with((string) config('app.url'), 'https://')) {
+            URL::forceScheme('https');
+        }
+
         Date::use(CarbonImmutable::class);
 
         DB::prohibitDestructiveCommands(
