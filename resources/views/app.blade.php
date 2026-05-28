@@ -52,6 +52,15 @@
 
         @viteReactRefresh
         @vite(['resources/css/app.css', 'resources/js/app.tsx', "resources/js/pages/{$page['component']}.tsx"])
+
+        {{-- Active custom theme — linked AFTER app.css so its :root/.dark token
+             overrides win on the cascade (equal specificity, later source
+             order). Shared by App\Http\Middleware\InjectActiveTheme. No
+             front-end rebuild is needed to switch themes. --}}
+        @if (! empty($activeThemeCss))
+            <link rel="stylesheet" href="{{ $activeThemeCss }}">
+        @endif
+
         <x-inertia::head>
             <title>{{ config('app.name', 'Laravel') }}</title>
         </x-inertia::head>

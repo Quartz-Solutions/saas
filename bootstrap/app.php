@@ -6,6 +6,7 @@ use App\Http\Middleware\EnsureTenantMembership;
 use App\Http\Middleware\HandleAppearance;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\HandleRedirects;
+use App\Http\Middleware\InjectActiveTheme;
 use App\Http\Middleware\ResolveApiTenant;
 use App\Http\Middleware\SetCmsLocale;
 use App\Http\Middleware\SetCurrentTenant;
@@ -52,6 +53,7 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $middleware->web(append: [
             HandleAppearance::class,
+            InjectActiveTheme::class,
             HandleInertiaRequests::class,
             EnforcePasswordReset::class,
             AddLinkHeadersForPreloadedAssets::class,

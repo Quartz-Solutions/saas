@@ -11,6 +11,7 @@ import {
     Flag,
     LayoutGrid,
     Mail,
+    Palette,
     Receipt,
     Settings as SettingsIcon,
     ShieldCheck,
@@ -51,6 +52,7 @@ import { index as adminPlans } from '@/routes/admin/plans';
 import { index as adminSettings } from '@/routes/admin/settings';
 import { index as adminSubscriptions } from '@/routes/admin/subscriptions';
 import { index as adminTenants } from '@/routes/admin/tenants';
+import { index as adminThemes } from '@/routes/admin/themes';
 import { index as adminUsers } from '@/routes/admin/users';
 import { index as adminWebhooks } from '@/routes/admin/webhooks';
 import tenantRoutes from '@/routes/tenants';
@@ -131,6 +133,7 @@ export function AppSidebar() {
             { title: 'Webhooks', href: adminWebhooks(), icon: Webhook },
             { title: 'Audit log', href: adminAudit(), icon: ClipboardList },
             { title: 'Feature flags', href: adminFeatureFlags(), icon: Flag },
+            { title: 'Themes', href: adminThemes(), icon: Palette },
             { title: 'Settings', href: adminSettings(), icon: Cog },
         ],
     };

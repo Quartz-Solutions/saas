@@ -18,6 +18,7 @@ class DatabaseSeeder extends Seeder
     {
         $this->call(CurrencySeeder::class);
         $this->call(RolesSeeder::class);
+        $this->call(ThemesSeeder::class);
         $this->call(CmsFeaturesSeeder::class);
         $this->call(CmsFormsSeeder::class);
         $this->call(CmsDocsSeeder::class);

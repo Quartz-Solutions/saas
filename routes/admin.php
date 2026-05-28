@@ -20,6 +20,8 @@ use App\Http\Controllers\Admin\SettingsController;
 use App\Http\Controllers\Admin\SubscriptionActionsController;
 use App\Http\Controllers\Admin\SubscriptionsAdminController;
 use App\Http\Controllers\Admin\TenantsAdminController;
+use App\Http\Controllers\Admin\ThemeFontsController;
+use App\Http\Controllers\Admin\ThemesController;
 use App\Http\Controllers\Admin\UsersAdminController;
 use App\Http\Controllers\Admin\WebhookEventsController;
 use Illuminate\Support\Facades\Route;
@@ -163,6 +165,27 @@ Route::middleware(['auth', 'verified', 'admin.scope', 'role:Super Admin'])
             ->only(['index', 'create', 'store', 'edit', 'update', 'destroy']);
         Route::post('plans/{plan}/restore', [PlansController::class, 'restore'])
             ->name('plans.restore');
+
+        // Themes — DB-owned theme catalog (color tokens, fonts, custom CSS).
+        // Activating swaps the live look with no front-end rebuild.
+        Route::resource('themes', ThemesController::class)
+            ->only(['index', 'create', 'store', 'edit', 'update', 'destroy'])
+            ->whereNumber('theme');
+        Route::post('themes/{theme}/activate', [ThemesController::class, 'activate'])
+            ->whereNumber('theme')
+            ->name('themes.activate');
+        Route::post('themes/{theme}/clone', [ThemesController::class, 'duplicate'])
+            ->whereNumber('theme')
+            ->name('themes.clone');
+        Route::put('themes/{theme}/custom-css', [ThemesController::class, 'updateCss'])
+            ->whereNumber('theme')
+            ->name('themes.custom-css');
+        Route::post('themes/{theme}/fonts', [ThemeFontsController::class, 'store'])
+            ->whereNumber('theme')
+            ->name('themes.fonts.store');
+        Route::delete('themes/{theme}/fonts/{font}', [ThemeFontsController::class, 'destroy'])
+            ->whereNumber('theme')->whereNumber('font')
+            ->name('themes.fonts.destroy');
 
         // Subscriptions — admin index + show (Phase B).
         Route::get('subscriptions', [SubscriptionsAdminController::class, 'index'])

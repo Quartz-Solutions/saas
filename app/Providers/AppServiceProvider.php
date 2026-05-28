@@ -12,6 +12,7 @@ use App\Models\Plan;
 use App\Models\Subscription;
 use App\Models\Tenant;
 use App\Models\TenantMembership;
+use App\Models\Theme;
 use App\Models\User;
 use App\Observers\AuditObserver;
 use App\Support\Auth\PwnedPasswords;
@@ -161,6 +162,7 @@ class AppServiceProvider extends ServiceProvider
     {
         AppSetting::observe(AuditObserver::class);
         Plan::observe(AuditObserver::class);
+        Theme::observe(AuditObserver::class);
         Tenant::observe(AuditObserver::class);
         TenantMembership::observe(AuditObserver::class);
         User::observe(AuditObserver::class);
