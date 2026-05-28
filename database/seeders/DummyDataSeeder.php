@@ -37,9 +37,9 @@ use Spatie\Permission\PermissionRegistrar;
  */
 class DummyDataSeeder extends Seeder
 {
-    private const TENANT_COUNT = 150;
+    private const TENANT_COUNT = 1500;
 
-    private const USER_COUNT = 10000;
+    private const USER_COUNT = 1000000;
 
     private const EMAIL_DOMAIN = 'dummy.test';
 
