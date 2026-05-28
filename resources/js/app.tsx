@@ -72,9 +72,16 @@ createInertiaApp({
 return currentBrand;
 }
 
-        // Pages (e.g. marketing docs via <SeoMeta>) may already render a
-        // "{page} - {site}" title themselves. Don't double-append the brand
-        // when it's already there, or when the page title IS the brand.
+        // Pages that compose their own complete title — e.g. marketing pages
+        // via <SeoMeta>, which renders "{page} | {site}" / "{page} - {site}"
+        // from the CMS title_template — already include the brand. Detect any
+        // such multi-segment title (separated by an en-dash, hyphen or pipe)
+        // and leave it untouched so we don't double-append the brand. Only
+        // bare, single-segment titles (e.g. "Dashboard") get " - {brand}".
+        if (/\s[|–-]\s/.test(title)) {
+return title;
+}
+
         const suffix = ` - ${currentBrand}`;
 
         if (title === currentBrand || title.endsWith(suffix)) {

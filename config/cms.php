@@ -609,14 +609,14 @@ return [
             'description' => 'Fallback meta values used when a page leaves SEO fields blank.',
             'fields' => [
                 ['key' => 'site_name', 'label' => 'Site name', 'type' => 'text'],
-                ['key' => 'title_template', 'label' => 'Title template ({page} | {site})', 'type' => 'text'],
+                ['key' => 'title_template', 'label' => 'Title template (e.g. {page} - {site})', 'type' => 'text'],
                 ['key' => 'description', 'label' => 'Default meta description', 'type' => 'textarea'],
                 ['key' => 'og_image_url', 'label' => 'Default OG image URL', 'type' => 'image'],
                 ['key' => 'robots_default', 'label' => 'Default robots directive', 'type' => 'text'],
             ],
             'defaults' => [
                 'site_name' => '',
-                'title_template' => '{page} | {site}',
+                'title_template' => '{page} - {site}',
                 'description' => '',
                 'og_image_url' => '',
                 'robots_default' => 'index,follow',

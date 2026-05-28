@@ -34,9 +34,18 @@
             }
         </style>
 
-        <link rel="icon" href="/favicon.ico" sizes="any">
-        <link rel="icon" href="/favicon.svg" type="image/svg+xml">
-        <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+        {{-- Favicon: prefer the CMS-managed brand favicon (admin sets it at
+             /admin/cms/globals/brand → shared as cmsGlobals.brand.favicon_url),
+             falling back to the static files shipped in public/. --}}
+        @php($brandFavicon = data_get($page ?? null, 'props.cmsGlobals.brand.favicon_url'))
+        @if ($brandFavicon)
+            <link rel="icon" href="{{ $brandFavicon }}">
+            <link rel="apple-touch-icon" href="{{ $brandFavicon }}">
+        @else
+            <link rel="icon" href="/favicon.ico" sizes="any">
+            <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+            <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+        @endif
 
         <link rel="preconnect" href="https://fonts.bunny.net">
         <link href="https://fonts.bunny.net/css?family=instrument-sans:400,500,600" rel="stylesheet" />
