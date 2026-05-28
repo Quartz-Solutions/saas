@@ -1,9 +1,9 @@
 import { Head, Link } from '@inertiajs/react';
 import { Building2, Clock, Mail, UserPlus } from 'lucide-react';
+import { Mono } from '@/components/admin/entity-detail/fact-card';
 import BrandMark from '@/components/brand-mark';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { Mono } from '@/components/admin/entity-detail/fact-card';
 
 type TenantBrief = {
     id: number | null;
@@ -23,14 +23,29 @@ type Props = {
 };
 
 function formatExpiry(iso: string | null): string | null {
-    if (!iso) return null;
+    if (!iso) {
+return null;
+}
+
     const d = new Date(iso);
     const diff = d.getTime() - Date.now();
-    if (diff <= 0) return 'Expired';
+
+    if (diff <= 0) {
+return 'Expired';
+}
+
     const days = Math.floor(diff / 86_400_000);
-    if (days >= 1) return `Expires in ${days} day${days === 1 ? '' : 's'}`;
+
+    if (days >= 1) {
+return `Expires in ${days} day${days === 1 ? '' : 's'}`;
+}
+
     const hours = Math.floor(diff / 3_600_000);
-    if (hours >= 1) return `Expires in ${hours} hour${hours === 1 ? '' : 's'}`;
+
+    if (hours >= 1) {
+return `Expires in ${hours} hour${hours === 1 ? '' : 's'}`;
+}
+
     return 'Expires soon';
 }
 

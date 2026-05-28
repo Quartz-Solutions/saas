@@ -11,8 +11,8 @@ import BrandMark from '@/components/brand-mark';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
-import { index as accountTenants } from '@/routes/account/tenants';
 import { logout } from '@/routes';
+import { index as accountTenants } from '@/routes/account/tenants';
 
 type ReasonKey =
     | 'expired'

@@ -28,7 +28,10 @@ type Props = {
 };
 
 function emailFromQuery(): string {
-    if (typeof window === 'undefined') return '';
+    if (typeof window === 'undefined') {
+return '';
+}
+
     return new URL(window.location.href).searchParams.get('email') ?? '';
 }
 

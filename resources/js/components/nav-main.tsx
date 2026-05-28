@@ -35,12 +35,25 @@ import type { NavItem } from '@/types';
  * CMS wins → only CMS opens, Admin stays collapsed.
  */
 function matchScore(currentPath: string, candidate: string): number {
-    if (!candidate) return -1;
+    if (!candidate) {
+return -1;
+}
+
     const c = candidate.split('?')[0].replace(/\/+$/, '') || '/';
     const cur = currentPath.replace(/\/+$/, '') || '/';
-    if (c === cur) return c.length;
-    if (c === '/') return cur === '/' ? 1 : -1;
-    if (cur.startsWith(c + '/')) return c.length;
+
+    if (c === cur) {
+return c.length;
+}
+
+    if (c === '/') {
+return cur === '/' ? 1 : -1;
+}
+
+    if (cur.startsWith(c + '/')) {
+return c.length;
+}
+
     return -1;
 }
 
@@ -56,17 +69,20 @@ export function NavMain({ items = [] }: { items: NavItem[] }) {
             itemTitle: '',
             childUrl: '',
         };
+
         for (const item of items) {
             for (const child of item.children ?? []) {
                 const url = toUrl(child.href);
                 const s = matchScore(currentUrl, url);
+
                 if (s > best.score) {
                     best = { score: s, itemTitle: item.title, childUrl: url };
                 }
             }
         }
+
         return best;
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+         
     }, [currentUrl, items]);
 
     return (
@@ -120,7 +136,9 @@ function CollapsibleNavItem({
     // Manual close (via the trigger) still works because we only force-open;
     // we never force-close on navigation.
     useEffect(() => {
-        if (isInsideGroup) setOpen(true);
+        if (isInsideGroup) {
+setOpen(true);
+}
     }, [isInsideGroup]);
 
     return (
@@ -145,6 +163,7 @@ function CollapsibleNavItem({
                     <SidebarMenuSub>
                         {(item.children ?? []).map((child) => {
                             const childUrl = toUrl(child.href);
+
                             return (
                                 <SidebarMenuSubItem key={child.title}>
                                     <SidebarMenuSubButton

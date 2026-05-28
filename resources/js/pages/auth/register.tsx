@@ -10,12 +10,16 @@ import { login } from '@/routes';
 import { store } from '@/routes/register';
 
 function emailFromQuery(): string {
-    if (typeof window === 'undefined') return '';
+    if (typeof window === 'undefined') {
+return '';
+}
+
     return new URL(window.location.href).searchParams.get('email') ?? '';
 }
 
 export default function Register() {
     const prefillEmail = emailFromQuery();
+
     return (
         <>
             <Head title="Register" />

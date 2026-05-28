@@ -74,7 +74,10 @@ export default function TenantMembers({
     const canEdit = isOwner; // simplification: only owner can edit roles via this UI
 
     const handleRoleChange = (member: Member, newRole: string) => {
-        if (!member.user_id) return;
+        if (!member.user_id) {
+return;
+}
+
         router.patch(
             tenantRoutes.members.role({ tenantSlug: tenant.slug, user: member.user_id }).url,
             { role: newRole },
@@ -114,6 +117,7 @@ export default function TenantMembers({
                             <TableBody>
                                 {members.map((m) => {
                                     const isSelf = m.user_id === currentUserId;
+
                                     return (
                                         <TableRow
                                             key={m.membership_id}
