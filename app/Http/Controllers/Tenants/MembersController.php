@@ -3,8 +3,8 @@
 namespace App\Http\Controllers\Tenants;
 
 use App\Http\Controllers\Controller;
-use App\Http\Requests\Tenants\MemberRoleUpdateRequest;
 use App\Http\Requests\Tenants\MemberRemoveRequest;
+use App\Http\Requests\Tenants\MemberRoleUpdateRequest;
 use App\Models\Tenant;
 use App\Models\TenantMembership;
 use App\Models\User;

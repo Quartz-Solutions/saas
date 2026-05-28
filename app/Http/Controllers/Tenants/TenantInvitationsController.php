@@ -8,6 +8,7 @@ use App\Http\Requests\Tenants\TenantInvitationStoreRequest;
 use App\Http\Requests\Tenants\TenantInvitationUpdateRequest;
 use App\Models\Tenant;
 use App\Models\TenantInvitation;
+use App\Models\User;
 use App\Support\Tenancy\TenantService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -133,7 +134,7 @@ class TenantInvitationsController extends Controller
             $session = $request->hasSession() ? $request->session() : null;
             $session?->put('url.intended', url($request->fullUrl()));
 
-            $hasAccount = \App\Models\User::query()
+            $hasAccount = User::query()
                 ->where('email', $invitation->email)
                 ->exists();
 
@@ -182,7 +183,7 @@ class TenantInvitationsController extends Controller
      *
      * @return array{reason:string,title:string,message:string,tenant:?array<string,mixed>,invitedEmail:?string}
      */
-    private function classifyInvitationFailure(string $token, \App\Models\User $user, string $serviceMessage): array
+    private function classifyInvitationFailure(string $token, User $user, string $serviceMessage): array
     {
         $row = TenantInvitation::query()
             ->where('token', $token)

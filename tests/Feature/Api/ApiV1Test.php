@@ -15,7 +15,11 @@ class ApiV1Test extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        RateLimiter::clear('token:1');
+        // Clear both the legacy `api` bucket and the per-category v1 buckets
+        // so a test's rate-limit fixture doesn't leak into the next case.
+        foreach (['token:1', 'api.read:token:1', 'api.write:token:1', 'api.auth:token:1'] as $key) {
+            RateLimiter::clear($key);
+        }
     }
 
     public function test_me_returns_user_payload_with_valid_token(): void
@@ -84,8 +88,9 @@ class ApiV1Test extends TestCase
 
     public function test_rate_limiter_kicks_in_after_quota(): void
     {
-        // Set the limit very low for the duration of this test.
-        config(['api-abilities.rate_limit_per_minute' => 3]);
+        // /api/v1/me lives in the read bucket — squash that limit, not the
+        // legacy `api` bucket, so the next request actually trips.
+        config(['api-abilities.rate_limits.read' => 3]);
 
         $user = User::factory()->create();
         $token = $user->createToken('cli', ['*']);

@@ -7,6 +7,7 @@ use App\Models\Tenant;
 use App\Models\User;
 use App\Support\Tenancy\TenantService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 class PurgeExpiredSoftDeletedTenantsTest extends TestCase
@@ -21,7 +22,7 @@ class PurgeExpiredSoftDeletedTenantsTest extends TestCase
 
         // Backdate the soft-delete timestamp via a raw update so we don't
         // depend on Eloquent timestamp munging.
-        \Illuminate\Support\Facades\DB::table('tenants')
+        DB::table('tenants')
             ->where('id', $tenant->id)
             ->update(['deleted_at' => now()->subDays($days)]);
 

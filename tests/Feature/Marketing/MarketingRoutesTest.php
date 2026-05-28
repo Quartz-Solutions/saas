@@ -3,6 +3,7 @@
 namespace Tests\Feature\Marketing;
 
 use App\Models\CmsPage;
+use Database\Seeders\CmsFeaturesSeeder;
 use Database\Seeders\CmsPagesSeeder;
 use Database\Seeders\PlansSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -15,7 +16,7 @@ class MarketingRoutesTest extends TestCase
 
     public function test_home_page_renders_with_public_layout(): void
     {
-        $this->seed(\Database\Seeders\CmsFeaturesSeeder::class);
+        $this->seed(CmsFeaturesSeeder::class);
 
         $response = $this->get(route('home'));
 

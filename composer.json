@@ -63,6 +63,9 @@
         "lint:check": [
             "pint --parallel --test"
         ],
+        "scribe": [
+            "@php artisan scribe:generate"
+        ],
         "ci:check": [
             "Composer\\Config::disableProcessTimeout",
             "npm run lint:check",

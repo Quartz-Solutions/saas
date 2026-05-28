@@ -4,6 +4,7 @@ namespace Tests\Feature\Marketing;
 
 use App\Models\CmsPage;
 use App\Support\Cms\BlockTypeRegistry;
+use App\Support\Cms\GlobalsService;
 use Database\Seeders\BillingDocsSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -51,7 +52,7 @@ class BillingDocsSeederTest extends TestCase
     {
         $this->seed(BillingDocsSeeder::class);
 
-        $payload = app(\App\Support\Cms\GlobalsService::class)->get('docs_sidebar');
+        $payload = app(GlobalsService::class)->get('docs_sidebar');
         $titles = collect($payload['columns'])->pluck('title')->all();
 
         $this->assertContains('Billing & admin', $titles);

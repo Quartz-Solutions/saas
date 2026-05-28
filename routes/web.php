@@ -9,6 +9,7 @@ use App\Http\Controllers\Billing\InvoicesController;
 use App\Http\Controllers\Billing\WebhookController;
 use App\Http\Controllers\Checkout\CheckoutController;
 use App\Http\Controllers\Onboarding\GetStartedController;
+use App\Http\Controllers\Tenants\MembersController;
 use App\Http\Controllers\Tenants\TenantInvitationsController;
 use App\Http\Controllers\Tenants\TenantOnboardingController;
 use App\Http\Controllers\Tenants\TenantsController;
@@ -156,12 +157,12 @@ Route::middleware(['auth', 'verified', 'tenant', 'tenant.member'])
             ->name('settings.destroy');
 
         // Tenant member roster + RBAC editor.
-        Route::get('members', [\App\Http\Controllers\Tenants\MembersController::class, 'index'])
+        Route::get('members', [MembersController::class, 'index'])
             ->name('members.index');
-        Route::patch('members/{user}/role', [\App\Http\Controllers\Tenants\MembersController::class, 'updateRole'])
+        Route::patch('members/{user}/role', [MembersController::class, 'updateRole'])
             ->whereNumber('user')
             ->name('members.role');
-        Route::delete('members/{user}', [\App\Http\Controllers\Tenants\MembersController::class, 'destroy'])
+        Route::delete('members/{user}', [MembersController::class, 'destroy'])
             ->whereNumber('user')
             ->name('members.destroy');
 

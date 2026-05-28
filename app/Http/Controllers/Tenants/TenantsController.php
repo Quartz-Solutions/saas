@@ -7,8 +7,12 @@ use App\Http\Requests\Tenants\TenantDestroyRequest;
 use App\Http\Requests\Tenants\TenantStoreRequest;
 use App\Http\Requests\Tenants\TenantUpdateRequest;
 use App\Models\Currency;
+use App\Models\Subscription;
 use App\Models\Tenant;
 use App\Models\TenantInvitation;
+use App\Models\TenantMembership;
+use App\Support\Billing\Checkout\CheckoutGateway;
+use App\Support\Billing\GatewayRegistry;
 use App\Support\ImageProcessor;
 use App\Support\Tenancy\TenantService;
 use Illuminate\Http\RedirectResponse;
@@ -43,7 +47,7 @@ class TenantsController extends Controller
         $tenantIds = $tenants->pluck('id')->all();
 
         // Active subscription per tenant (any non-terminal status).
-        $activeSubs = \App\Models\Subscription::query()
+        $activeSubs = Subscription::query()
             ->whereIn('tenant_id', $tenantIds)
             ->whereIn('status', ['trialing', 'active', 'past_due'])
             ->with('plan:id,slug,name,price_cents,currency,billing_period')
@@ -52,7 +56,7 @@ class TenantsController extends Controller
 
         // Owner-only: pending invitations count per owned tenant.
         $ownedIds = $tenants->where('owner_id', $user->id)->pluck('id')->all();
-        $pendingInvites = \App\Models\TenantInvitation::query()
+        $pendingInvites = TenantInvitation::query()
             ->whereIn('tenant_id', $ownedIds)
             ->whereNull('accepted_at')
             ->whereNull('revoked_at')
@@ -63,7 +67,7 @@ class TenantsController extends Controller
         $payload = $tenants->map(function (Tenant $t) use ($user, $activeSubs, $pendingInvites) {
             $isOwner = $t->owner_id === $user->id;
             $sub = $activeSubs->get($t->id);
-            /** @var \App\Models\TenantMembership|null $pivot */
+            /** @var TenantMembership|null $pivot */
             $pivot = $t->pivot ?? null;
 
             return [
@@ -72,7 +76,7 @@ class TenantsController extends Controller
                 'name' => $t->name,
                 'logo_path' => $t->logo_path,
                 'logo_url' => $t->logo_path
-                    ? \Illuminate\Support\Facades\Storage::disk('public')->url($t->logo_path)
+                    ? Storage::disk('public')->url($t->logo_path)
                     : null,
                 'role' => $isOwner ? 'Owner' : 'Member',
                 'status' => $t->status,
@@ -159,8 +163,8 @@ class TenantsController extends Controller
             // Gateways the tenant can pick as their preferred default.
             // Filtered by tenant currency so we don't show options that
             // would fail at checkout.
-            'gateways' => collect(app(\App\Support\Billing\GatewayRegistry::class)->all())
-                ->filter(fn ($gw) => $gw instanceof \App\Support\Billing\Checkout\CheckoutGateway)
+            'gateways' => collect(app(GatewayRegistry::class)->all())
+                ->filter(fn ($gw) => $gw instanceof CheckoutGateway)
                 ->filter(fn ($gw) => in_array($tenant->currency, $gw->supportedCurrencies(), true))
                 ->map(fn ($gw) => [
                     'id' => $gw->id(),

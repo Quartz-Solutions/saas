@@ -7,6 +7,7 @@ use App\Models\Plan;
 use App\Models\User;
 use App\Support\Tenancy\TenantService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Str;
 use Tests\TestCase;
 
 class PreferredGatewayTest extends TestCase
@@ -28,7 +29,7 @@ class PreferredGatewayTest extends TestCase
 
         $session = new CheckoutSession;
         $session->forceFill([
-            'public_id' => (string) \Illuminate\Support\Str::ulid(),
+            'public_id' => (string) Str::ulid(),
             'user_id' => $owner->id,
             'tenant_id' => $tenant->id,
             'plan_id' => $plan->id,

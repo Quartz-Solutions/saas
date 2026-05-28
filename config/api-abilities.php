@@ -24,31 +24,61 @@ return [
         [
             'key' => 'profile:read',
             'label' => 'Read profile',
-            'description' => 'Read the authenticated user profile + tenant memberships.',
+            'description' => 'GET /me — read the authenticated user + token metadata.',
             'group' => 'read',
+        ],
+        [
+            'key' => 'profile:write',
+            'label' => 'Update profile',
+            'description' => 'PATCH /me, request email change, revoke other sessions.',
+            'group' => 'write',
         ],
         [
             'key' => 'tenants:read',
             'label' => 'Read tenants',
-            'description' => 'List tenants the user belongs to.',
+            'description' => 'List + detail for the tenants the user can see.',
             'group' => 'read',
         ],
         [
             'key' => 'tenants:write',
             'label' => 'Manage tenants',
-            'description' => 'Create / update tenants the user owns.',
+            'description' => 'Create / update / delete tenants the user owns.',
+            'group' => 'write',
+        ],
+        [
+            'key' => 'members:read',
+            'label' => 'Read members',
+            'description' => 'List members + pending invitations inside a tenant.',
+            'group' => 'read',
+        ],
+        [
+            'key' => 'members:write',
+            'label' => 'Manage members',
+            'description' => 'Invite, change roles, remove members.',
             'group' => 'write',
         ],
         [
             'key' => 'users:read',
-            'label' => 'Read tenant users',
-            'description' => 'List users inside tenants the user is a member of.',
+            'label' => 'Read tenant users (legacy alias)',
+            'description' => 'Backwards-compat for the v0 ability key — same scope as members:read.',
             'group' => 'read',
         ],
         [
             'key' => 'users:write',
-            'label' => 'Manage tenant users',
-            'description' => 'Invite, update, remove users inside tenants.',
+            'label' => 'Manage tenant users (legacy alias)',
+            'description' => 'Backwards-compat for the v0 ability key — same scope as members:write.',
+            'group' => 'write',
+        ],
+        [
+            'key' => 'billing:read',
+            'label' => 'Read billing',
+            'description' => 'View plans, subscriptions, invoices, payments.',
+            'group' => 'read',
+        ],
+        [
+            'key' => 'billing:write',
+            'label' => 'Manage billing',
+            'description' => 'Change plan, cancel, reactivate.',
             'group' => 'write',
         ],
         [
@@ -60,29 +90,65 @@ return [
         [
             'key' => 'webhooks:write',
             'label' => 'Manage webhooks',
-            'description' => 'Create / update outbound webhook endpoints.',
+            'description' => 'Create / update endpoints, rotate secret, replay deliveries.',
             'group' => 'write',
         ],
         [
-            'key' => 'billing:read',
-            'label' => 'Read billing',
-            'description' => 'View subscriptions, invoices, payments.',
+            'key' => 'audit:read',
+            'label' => 'Read audit log',
+            'description' => 'List tenant audit log entries.',
             'group' => 'read',
+        ],
+        [
+            'key' => 'notifications:read',
+            'label' => 'Read notification preferences',
+            'description' => 'Read the channel × event preferences matrix.',
+            'group' => 'read',
+        ],
+        [
+            'key' => 'notifications:write',
+            'label' => 'Update notification preferences',
+            'description' => 'Update channel × event preferences.',
+            'group' => 'write',
         ],
         [
             'key' => '*',
             'label' => 'Full access',
-            'description' => 'All abilities. Use sparingly.',
+            'description' => 'All abilities. Use sparingly — scripts only.',
             'group' => 'admin',
         ],
     ],
 
     /*
     |--------------------------------------------------------------------
-    | Rate limit (per token per minute)
+    | Rate limits (per token per minute)
     |--------------------------------------------------------------------
+    |
+    | Per api.md §3.10, the API uses category buckets — read endpoints get a
+    | larger quota than writes, and the small auth bucket guards sensitive
+    | endpoints (profile email change, session revocation).
+    |
+    | `rate_limit_per_minute` is kept so the v0 `throttle:api` named limiter
+    | (referenced by older test fixtures that override it directly) continues
+    | to resolve. New code should use the category names: api.read /
+    | api.write / api.auth.
     */
+    'rate_limits' => [
+        'read' => env('API_RATE_LIMIT_READ_PER_MINUTE', 120),
+        'write' => env('API_RATE_LIMIT_WRITE_PER_MINUTE', 30),
+        'auth' => env('API_RATE_LIMIT_AUTH_PER_MINUTE', 6),
+    ],
+
     'rate_limit_per_minute' => env('API_RATE_LIMIT_PER_MINUTE', 60),
+
+    /*
+    |--------------------------------------------------------------------
+    | Idempotency
+    |--------------------------------------------------------------------
+    | Window for caching successful write-endpoint responses keyed by
+    | (token, URL, Idempotency-Key header). 24h matches Stripe's convention.
+    */
+    'idempotency_ttl_seconds' => env('API_IDEMPOTENCY_TTL_SECONDS', 86400),
 
     /*
     |--------------------------------------------------------------------

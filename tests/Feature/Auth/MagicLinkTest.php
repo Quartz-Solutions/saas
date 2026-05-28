@@ -68,8 +68,11 @@ class MagicLinkTest extends TestCase
 
         $signedUrl = null;
         Mail::assertQueued(MagicLinkMail::class, function ($m) use ($user, &$signedUrl) {
-            if (! $m->user->is($user)) return false;
+            if (! $m->user->is($user)) {
+                return false;
+            }
             $signedUrl = $m->magicUrl;
+
             return true;
         });
 
@@ -89,8 +92,11 @@ class MagicLinkTest extends TestCase
 
         $signedUrl = null;
         Mail::assertQueued(MagicLinkMail::class, function ($m) use ($user, &$signedUrl) {
-            if (! $m->user->is($user)) return false;
+            if (! $m->user->is($user)) {
+                return false;
+            }
             $signedUrl = $m->magicUrl;
+
             return true;
         });
 

@@ -14,14 +14,13 @@ return [
     'title' => config('app.name').' API Documentation',
 
     // A short description of your API. Will be included in the docs webpage, Postman collection and OpenAPI spec.
-    'description' => '',
+    'description' => 'Token-authenticated REST surface that mirrors what the Quartz SPA can do — tenants, members, billing, webhooks, audit, notification preferences.',
 
-    // Text to place in the "Introduction" section, right after the `description`. Markdown and HTML are supported.
+    // Text to place in the "Introduction" section. We hand-maintain a richer
+    // version in .scribe/intro.md (Scribe reads that file directly when
+    // present), so this block stays as the one-line summary.
     'intro_text' => <<<'INTRO'
-            This documentation aims to provide all the information you need to work with our API.
-
-            <aside>As you scroll, you'll see code examples for working with the API in different programming languages in the dark area to the right (or as part of the content on mobile).
-            You can switch the language used with the tabs at the top right (or from the nav menu at the top left on mobile).</aside>
+            See the introduction page for the hand-written quick start, ability catalogue, rate-limit reference, idempotency contract, versioning policy and error envelope.
         INTRO,
 
     // The base URL displayed in the docs.
@@ -104,31 +103,17 @@ return [
         'csrf_url' => '/sanctum/csrf-cookie',
     ],
 
-    // How is your API authenticated? This information will be used in the displayed docs, generated examples and response calls.
+    // The Quartz API is Bearer-token-authenticated via Sanctum personal
+    // access tokens. Every documented endpoint requires auth — individual
+    // ones can opt out with `@unauthenticated` if they're added later.
     'auth' => [
-        // Set this to true if ANY endpoints in your API use authentication.
-        'enabled' => false,
-
-        // Set this to true if your API should be authenticated by default. If so, you must also set `enabled` (above) to true.
-        // You can then use @unauthenticated or @authenticated on individual endpoints to change their status from the default.
-        'default' => false,
-
-        // Where is the auth value meant to be sent in a request?
+        'enabled' => true,
+        'default' => true,
         'in' => AuthIn::BEARER->value,
-
-        // The name of the auth parameter (e.g. token, key, apiKey) or header (e.g. Authorization, Api-Key).
-        'name' => 'key',
-
-        // The value of the parameter to be used by Scribe to authenticate response calls.
-        // This will NOT be included in the generated documentation. If empty, Scribe will use a random value.
+        'name' => 'Authorization',
         'use_value' => env('SCRIBE_AUTH_KEY'),
-
-        // Placeholder your users will see for the auth parameter in the example requests.
-        // Set this to null if you want Scribe to use a random value as placeholder instead.
-        'placeholder' => '{YOUR_AUTH_KEY}',
-
-        // Any extra authentication-related info for your users. Markdown and HTML are supported.
-        'extra_info' => 'You can retrieve your token by visiting your dashboard and clicking <b>Generate API token</b>.',
+        'placeholder' => '{YOUR_QUARTZ_TOKEN}',
+        'extra_info' => 'Mint a token at <code>/settings/api-tokens</code>. Pick only the abilities the integration needs. See the <a href="./intro.md#abilities">ability catalogue</a> for what each one unlocks.',
     ],
 
     // Example requests for each endpoint will be shown in each of these languages.

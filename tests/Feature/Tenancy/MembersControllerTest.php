@@ -2,9 +2,11 @@
 
 namespace Tests\Feature\Tenancy;
 
+use App\Models\TenantMembership;
 use App\Models\User;
 use App\Support\Tenancy\TenantService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
 class MembersControllerTest extends TestCase
@@ -14,9 +16,9 @@ class MembersControllerTest extends TestCase
     private function ensureRoles(int $tenantId): void
     {
         setPermissionsTeamId($tenantId);
-        \Spatie\Permission\Models\Role::findOrCreate('Owner', 'web');
-        \Spatie\Permission\Models\Role::findOrCreate('Admin', 'web');
-        \Spatie\Permission\Models\Role::findOrCreate('Member', 'web');
+        Role::findOrCreate('Owner', 'web');
+        Role::findOrCreate('Admin', 'web');
+        Role::findOrCreate('Member', 'web');
     }
 
     public function test_index_lists_tenant_members(): void
@@ -25,7 +27,7 @@ class MembersControllerTest extends TestCase
         $tenant = app(TenantService::class)->create($owner, ['name' => 'Acme']);
         $this->ensureRoles($tenant->id);
         $member = User::factory()->create();
-        \App\Models\TenantMembership::query()->create([
+        TenantMembership::query()->create([
             'tenant_id' => $tenant->id,
             'user_id' => $member->id,
             'joined_at' => now(),
@@ -47,7 +49,7 @@ class MembersControllerTest extends TestCase
         $tenant = app(TenantService::class)->create($owner, ['name' => 'Acme']);
         $this->ensureRoles($tenant->id);
         $member = User::factory()->create();
-        \App\Models\TenantMembership::query()->create([
+        TenantMembership::query()->create([
             'tenant_id' => $tenant->id,
             'user_id' => $member->id,
             'joined_at' => now(),
@@ -91,7 +93,7 @@ class MembersControllerTest extends TestCase
         $tenant = app(TenantService::class)->create($owner, ['name' => 'Acme']);
         $this->ensureRoles($tenant->id);
         $member = User::factory()->create();
-        \App\Models\TenantMembership::query()->create([
+        TenantMembership::query()->create([
             'tenant_id' => $tenant->id,
             'user_id' => $member->id,
             'joined_at' => now(),
@@ -111,7 +113,7 @@ class MembersControllerTest extends TestCase
         $tenant = app(TenantService::class)->create($owner, ['name' => 'Acme']);
         $this->ensureRoles($tenant->id);
         $member = User::factory()->create();
-        \App\Models\TenantMembership::query()->create([
+        TenantMembership::query()->create([
             'tenant_id' => $tenant->id,
             'user_id' => $member->id,
             'joined_at' => now(),

@@ -3,6 +3,7 @@
 namespace Tests\Feature\Marketing;
 
 use App\Models\CmsPage;
+use App\Support\Cms\BlockTypeRegistry;
 use Database\Seeders\CmsDocsSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -80,7 +81,7 @@ class CmsDocsSeederTest extends TestCase
     public function test_every_doc_uses_only_registered_block_types(): void
     {
         $this->seed(CmsDocsSeeder::class);
-        $registered = app(\App\Support\Cms\BlockTypeRegistry::class)->ids();
+        $registered = app(BlockTypeRegistry::class)->ids();
 
         $pages = CmsPage::query()->whereIn('slug', self::EXPECTED_SLUGS)->get();
         foreach ($pages as $page) {

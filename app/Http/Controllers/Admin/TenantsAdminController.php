@@ -9,10 +9,12 @@ use App\Http\Requests\Admin\Tenants\ForceDeleteTenantRequest;
 use App\Http\Requests\Admin\Tenants\GdprExportTenantRequest;
 use App\Http\Requests\Admin\Tenants\RestoreTenantRequest;
 use App\Http\Requests\Admin\Tenants\SuspendTenantRequest;
+use App\Jobs\DeliverWebhookJob;
 use App\Models\AuditLog;
 use App\Models\Invoice;
 use App\Models\LoginHistory;
 use App\Models\OutboundWebhook;
+use App\Models\OutboundWebhookDelivery;
 use App\Models\Payment;
 use App\Models\Subscription;
 use App\Models\Tenant;
@@ -212,7 +214,7 @@ class TenantsAdminController extends Controller
         // Recent outbound webhook deliveries across all of this tenant's
         // endpoints — surfaced as a mini-table so the admin can retry
         // failures inline without leaving the tenant detail.
-        $outboundDeliveries = \App\Models\OutboundWebhookDelivery::query()
+        $outboundDeliveries = OutboundWebhookDelivery::query()
             ->whereIn('outbound_webhook_id', $outboundWebhooks->pluck('id'))
             ->with('webhook:id,url,description')
             ->latest('id')
@@ -480,7 +482,7 @@ class TenantsAdminController extends Controller
      * Re-queue a failed (or stuck) outbound webhook delivery from the
      * tenant detail activity panel. Available to Super Admins.
      */
-    public function retryWebhookDelivery(Request $request, Tenant $tenant, \App\Models\OutboundWebhookDelivery $delivery): RedirectResponse
+    public function retryWebhookDelivery(Request $request, Tenant $tenant, OutboundWebhookDelivery $delivery): RedirectResponse
     {
         // Authorise via the route group's Super Admin gate already; just
         // sanity-check the delivery belongs to this tenant's webhooks.
@@ -490,18 +492,18 @@ class TenantsAdminController extends Controller
         }
 
         $delivery->forceFill([
-            'status' => \App\Models\OutboundWebhookDelivery::STATUS_PENDING,
+            'status' => OutboundWebhookDelivery::STATUS_PENDING,
             'failed_at' => null,
             'next_retry_at' => null,
         ])->save();
 
-        \App\Jobs\DeliverWebhookJob::dispatch($delivery->id);
+        DeliverWebhookJob::dispatch($delivery->id);
 
         AuditLog::create([
             'tenant_id' => $tenant->id,
             'user_id' => $request->user()->id,
             'action' => 'admin.tenant.webhook_delivery_retried',
-            'auditable_type' => \App\Models\OutboundWebhookDelivery::class,
+            'auditable_type' => OutboundWebhookDelivery::class,
             'auditable_id' => $delivery->id,
             'new_values' => [
                 'webhook_id' => $delivery->outbound_webhook_id,

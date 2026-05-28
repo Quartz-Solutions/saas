@@ -4,6 +4,7 @@ namespace App\Providers;
 
 use App\Events\CheckoutAbandoned;
 use App\Listeners\AlertOnNewDeviceLogin;
+use App\Listeners\NotifyTwoFactorRecoveryUsed;
 use App\Listeners\SendCheckoutAbandonmentReminder;
 use App\Models\AppSetting;
 use App\Models\CheckoutSession;
@@ -47,6 +48,7 @@ use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rules\Password;
+use Laravel\Fortify\Events\RecoveryCodeReplaced;
 use Stripe\StripeClient;
 
 class AppServiceProvider extends ServiceProvider
@@ -197,14 +199,42 @@ class AppServiceProvider extends ServiceProvider
             return Limit::perMinute($perMinute)
                 ->by($tokenId !== null ? 'token:'.$tokenId : 'ip:'.$request->ip());
         });
+
+        // Per-category API limiters. Reads share a generous bucket; writes
+        // get a tighter one; the small `auth` bucket guards email change +
+        // session revocation. Keyed per-token so misbehaving integrations
+        // can't starve other clients. See api.md §3.10.
+        $bucket = static function (Request $request, string $prefix): string {
+            $tokenId = $request->user()?->currentAccessToken()?->id;
+
+            return sprintf('%s:%s', $prefix, $tokenId !== null ? 'token:'.$tokenId : 'ip:'.$request->ip());
+        };
+
+        RateLimiter::for('api.read', function (Request $request) use ($bucket) {
+            $perMinute = (int) config('api-abilities.rate_limits.read', 120);
+
+            return Limit::perMinute($perMinute)->by($bucket($request, 'api.read'));
+        });
+
+        RateLimiter::for('api.write', function (Request $request) use ($bucket) {
+            $perMinute = (int) config('api-abilities.rate_limits.write', 30);
+
+            return Limit::perMinute($perMinute)->by($bucket($request, 'api.write'));
+        });
+
+        RateLimiter::for('api.auth', function (Request $request) use ($bucket) {
+            $perMinute = (int) config('api-abilities.rate_limits.auth', 6);
+
+            return Limit::perMinute($perMinute)->by($bucket($request, 'api.auth'));
+        });
     }
 
     protected function configureLoginAlertListener(): void
     {
         Event::listen(Login::class, AlertOnNewDeviceLogin::class);
         Event::listen(
-            \Laravel\Fortify\Events\RecoveryCodeReplaced::class,
-            \App\Listeners\NotifyTwoFactorRecoveryUsed::class,
+            RecoveryCodeReplaced::class,
+            NotifyTwoFactorRecoveryUsed::class,
         );
     }
 

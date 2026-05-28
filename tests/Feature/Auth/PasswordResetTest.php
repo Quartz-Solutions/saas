@@ -52,6 +52,7 @@ class PasswordResetTest extends TestCase
             if (preg_match('#/reset-password/([^?]+)#', $m->resetUrl, $match)) {
                 $token = $match[1];
             }
+
             return true;
         });
 
@@ -72,6 +73,7 @@ class PasswordResetTest extends TestCase
             if (preg_match('#/reset-password/([^?]+)#', $m->resetUrl, $match)) {
                 $token = $match[1];
             }
+
             return true;
         });
 
